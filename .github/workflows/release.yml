@@ -80,11 +80,12 @@ jobs:
       - name: Install Ninja
         run: choco install ninja -y
 
-      - name: Install Vulkan SDK
-        uses: humbletim/install-vulkan-sdk@v1.2
+      - name: Prepare Vulkan SDK
+        uses: humbletim/setup-vulkan-sdk@v1.2.1
         with:
-          version: latest
-          cache: true
+          vulkan-query-version: 'latest'
+          vulkan-components: 'Vulkan-Headers, Vulkan-Loader'
+          vulkan-use-cache: true
 
       - name: Install Qt 6
         id: install-qt
@@ -102,15 +103,8 @@ jobs:
         run: |
           Write-Host "VULKAN_SDK is: $env:VULKAN_SDK"
           Write-Host "QT_ROOT_DIR is: $env:QT_ROOT_DIR"
-          $cmakeArgs = @("-B", "build", "-S", ".", "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR")
-          if ($env:VULKAN_SDK -and (Test-Path "$env:VULKAN_SDK/Lib/vulkan-1.lib")) {
-            $vLib = "$env:VULKAN_SDK/Lib/vulkan-1.lib" -replace '\\', '/'
-            $vInc = "$env:VULKAN_SDK/Include" -replace '\\', '/'
-            $cmakeArgs += "-DVulkan_LIBRARY=$vLib"
-            $cmakeArgs += "-DVulkan_INCLUDE_DIR=$vInc"
-            Write-Host "Explicitly passing Vulkan: $vLib"
-          }
-          cmake @cmakeArgs
+          Get-ChildItem -Path "$env:VULKAN_SDK" -Recurse | Select-Object -First 20 FullName
+          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$($env:QT_ROOT_DIR);$($env:VULKAN_SDK)"
 
       - name: Build EDPC
         run: |

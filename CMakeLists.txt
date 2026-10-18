@@ -14,7 +14,7 @@ if (MSVC)
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
-find_package(Vulkan)
+find_package(Vulkan REQUIRED)
 
 set(EDPC_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/edpc_core")
 
