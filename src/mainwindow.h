@@ -201,6 +201,7 @@ private:
     QSlider* m_sliderTestHeight;
     QDoubleSpinBox* m_spinTestHeight;
     QCheckBox* m_chkShowWire;
+    QCheckBox* m_chkShowPivots;
     QLabel* m_lblArmAngles;
     QLabel* m_lblReachability;
     QPushButton* m_btnResetCam;

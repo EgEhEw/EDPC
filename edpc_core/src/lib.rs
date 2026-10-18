@@ -1,3 +1,4 @@
+pub mod bbmodel_converter;
 pub mod kinematics;
 pub mod obj_parser;
 pub mod pack_inspector;
@@ -31,6 +32,16 @@ pub struct EdpcPivots {
     pub elbow: Vec3,
     pub tip: Vec3,
     pub shoe_offset: f32,
+    pub has_p4: bool,
+    pub p4_base: Vec3,
+    pub p4_elbow: Vec3,
+}
+
+#[repr(C)]
+pub struct EdpcTransformedPivots {
+    pub p1: Vec3,
+    pub p2: Vec3,
+    pub p3: Vec3,
     pub has_p4: bool,
     pub p4_base: Vec3,
     pub p4_elbow: Vec3,
@@ -124,6 +135,99 @@ pub unsafe extern "C" fn edpc_model_get_pivots(
     (*out_pivots).has_p4 = p.p4_base.is_some() && p.p4_elbow.is_some();
     (*out_pivots).p4_base = p.p4_base.unwrap_or_default();
     (*out_pivots).p4_elbow = p.p4_elbow.unwrap_or_default();
+
+    true
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn edpc_convert_or_fix_bbmodel(bbmodel_path_ptr: *const c_char) -> *mut c_char {
+    if bbmodel_path_ptr.is_null() {
+        return ptr::null_mut();
+    }
+    let c_str = CStr::from_ptr(bbmodel_path_ptr);
+    let path_str = match c_str.to_str() {
+        Ok(s) => s,
+        Err(_) => return ptr::null_mut(),
+    };
+
+    match bbmodel_converter::convert_or_fix_bbmodel(path_str) {
+        Ok(out_path) => {
+            match CString::new(out_path) {
+                Ok(cs) => cs.into_raw(),
+                Err(_) => ptr::null_mut(),
+            }
+        }
+        Err(e) => {
+            eprintln!("edpc_convert_or_fix_bbmodel error: {}", e);
+            ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn edpc_model_get_transformed_pivots(
+    handle: *const EdpcModelHandle,
+    current_height: f32,
+    out_pivots: *mut EdpcTransformedPivots,
+) -> bool {
+    if handle.is_null() || out_pivots.is_null() {
+        return false;
+    }
+    let h = &*handle;
+    let angles = h.solver.solve(current_height);
+    let base = h.model.pivots.base;
+    let elbow = h.model.pivots.elbow;
+    let tip = h.model.pivots.tip;
+
+    let a1 = angles.angle1;
+    let a4 = angles.angle4;
+
+    // p1 is base
+    let p1 = base;
+
+    // p2 is elbow rotated around base by a1
+    let dy2 = elbow.y - base.y;
+    let dz2 = elbow.z - base.z;
+    let p2 = Vec3 {
+        x: 0.0,
+        y: base.y + dy2 * a1.cos() - dz2 * a1.sin(),
+        z: base.z + dy2 * a1.sin() + dz2 * a1.cos(),
+    };
+
+    // p3 is tip: y is current_height, z is adaptive target_z
+    let target_z = if current_height < 1.10 {
+        let t_fold = ((1.10 - current_height) / (1.10 - 0.40)).clamp(0.0, 1.0);
+        let smooth_fold = t_fold * t_fold * (3.0 - 2.0 * t_fold);
+        let shift_z = if elbow.z < base.z { -0.035 } else { 0.035 };
+        tip.z + smooth_fold * shift_z
+    } else {
+        tip.z
+    };
+    let p3 = Vec3 {
+        x: 0.0,
+        y: current_height,
+        z: target_z,
+    };
+
+    let (has_p4, p4_b, p4_e) = if let (Some(b4), Some(e4)) = (h.model.pivots.p4_base, h.model.pivots.p4_elbow) {
+        let dy4 = e4.y - b4.y;
+        let dz4 = e4.z - b4.z;
+        let p4_elbow_dyn = Vec3 {
+            x: 0.0,
+            y: b4.y + dy4 * a4.cos() - dz4 * a4.sin(),
+            z: b4.z + dy4 * a4.sin() + dz4 * a4.cos(),
+        };
+        (true, Vec3 { x: 0.0, y: b4.y, z: b4.z }, p4_elbow_dyn)
+    } else {
+        (false, Vec3::default(), Vec3::default())
+    };
+
+    (*out_pivots).p1 = Vec3 { x: 0.0, y: p1.y, z: p1.z };
+    (*out_pivots).p2 = p2;
+    (*out_pivots).p3 = p3;
+    (*out_pivots).has_p4 = has_p4;
+    (*out_pivots).p4_base = p4_b;
+    (*out_pivots).p4_elbow = p4_e;
 
     true
 }

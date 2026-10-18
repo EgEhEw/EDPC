@@ -13,6 +13,7 @@ VulkanViewport::VulkanViewport(QWindow* parent)
       m_currentHeight(1.448f),
       m_wireHeight(1.448f),
       m_wireVisible(true),
+      m_showPivots(true),
       m_yaw(45.0f),
       m_pitch(25.0f),
       m_distance(3.0f),
@@ -57,6 +58,7 @@ QVulkanWindowRenderer* VulkanViewport::createRenderer() {
         m_renderer->updateMeshData(m_cachedCustomMesh);
     }
     m_renderer->setShowWire(m_wireVisible);
+    m_renderer->setShowPivots(m_showPivots);
     m_renderer->updateWireHeight(m_wireHeight);
     applyModelKinematics();
     return m_renderer;
@@ -193,6 +195,14 @@ void VulkanViewport::setWireVisible(bool show) {
     requestUpdate();
 }
 
+void VulkanViewport::setShowPivots(bool show) {
+    m_showPivots = show;
+    if (m_renderer) {
+        m_renderer->setShowPivots(show);
+    }
+    requestUpdate();
+}
+
 void VulkanViewport::setInvertCamera(bool invert) {
     m_invertCamera = invert;
 }
@@ -231,6 +241,13 @@ void VulkanViewport::applyModelKinematics() {
         if (m_renderer && verts && count > 0) {
             std::vector<EdpcVertex> meshVec(verts, verts + count);
             m_renderer->updateMeshData(meshVec);
+        }
+    }
+
+    EdpcTransformedPivots transformedPivots;
+    if (edpc_model_get_transformed_pivots(m_model, m_currentHeight, &transformedPivots)) {
+        if (m_renderer) {
+            m_renderer->updateTransformedPivots(transformedPivots);
         }
     }
 

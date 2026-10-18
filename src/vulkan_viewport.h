@@ -33,6 +33,8 @@ public:
     void reapplyTextures();
     void updateWireHeight(float wireHeight);
     void setWireVisible(bool show);
+    void setShowPivots(bool show);
+    bool showPivots() const { return m_showPivots; }
     void setInvertCamera(bool invert);
     bool invertCamera() const { return m_invertCamera; }
     void resetCamera();
@@ -64,6 +66,7 @@ private:
     float m_currentHeight;
     float m_wireHeight;
     bool m_wireVisible;
+    bool m_showPivots;
 
     // Orbit Camera Parameters
     float m_yaw;

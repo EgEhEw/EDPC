@@ -45,7 +45,10 @@ VulkanRenderer::VulkanRenderer(VulkanViewport* window)
       m_vehicleTextureNeedsUpload(false),
       m_wireHeight(1.448f),
       m_showWire(true),
+      m_showPivots(true),
+      m_hasPivots(false),
       m_meshNeedsUpload(false) {
+    std::memset(&m_transformedPivots, 0, sizeof(m_transformedPivots));
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -675,6 +678,126 @@ void VulkanRenderer::setShowWire(bool show) {
     m_meshNeedsUpload = true;
 }
 
+void VulkanRenderer::setShowPivots(bool show) {
+    std::lock_guard<std::mutex> lock(m_meshMutex);
+    m_showPivots = show;
+    m_meshNeedsUpload = true;
+}
+
+void VulkanRenderer::updateTransformedPivots(const EdpcTransformedPivots& pivots) {
+    std::lock_guard<std::mutex> lock(m_meshMutex);
+    m_transformedPivots = pivots;
+    m_hasPivots = true;
+    m_meshNeedsUpload = true;
+}
+
+void VulkanRenderer::generatePivotGizmos(std::vector<EdpcVertex>& outVerts) {
+    if (!m_showPivots || !m_hasPivots) return;
+
+    EdpcVec2 zeroUv{0.0f, 0.0f};
+
+    // Helper to add an oriented circular ring
+    auto addRing = [&](EdpcVec3 center, int planeAxis, float rIn, float rOut, uint32_t partId) {
+        const int SEGMENTS = 24;
+        const float twoPi = 6.28318530718f;
+
+        for (int i = 0; i < SEGMENTS; ++i) {
+            float a0 = (twoPi * i) / SEGMENTS;
+            float a1 = (twoPi * (i + 1)) / SEGMENTS;
+
+            float c0 = std::cos(a0), s0 = std::sin(a0);
+            float c1 = std::cos(a1), s1 = std::sin(a1);
+
+            EdpcVec3 p0, p1, p2, p3;
+            EdpcVec3 normal;
+
+            if (planeAxis == 0) {
+                // Ring in YZ plane (normal along X)
+                normal = {1.0f, 0.0f, 0.0f};
+                p0 = {center.x, center.y + rIn * c0, center.z + rIn * s0};
+                p1 = {center.x, center.y + rOut * c0, center.z + rOut * s0};
+                p2 = {center.x, center.y + rOut * c1, center.z + rOut * s1};
+                p3 = {center.x, center.y + rIn * c1, center.z + rIn * s1};
+            } else if (planeAxis == 1) {
+                // Ring in XZ plane (normal along Y)
+                normal = {0.0f, 1.0f, 0.0f};
+                p0 = {center.x + rIn * c0, center.y, center.z + rIn * s0};
+                p1 = {center.x + rOut * c0, center.y, center.z + rOut * s0};
+                p2 = {center.x + rOut * c1, center.y, center.z + rOut * s1};
+                p3 = {center.x + rIn * c1, center.y, center.z + rIn * s1};
+            } else {
+                // Ring in XY plane (normal along Z)
+                normal = {0.0f, 0.0f, 1.0f};
+                p0 = {center.x + rIn * c0, center.y + rIn * s0, center.z};
+                p1 = {center.x + rOut * c0, center.y + rOut * s0, center.z};
+                p2 = {center.x + rOut * c1, center.y + rOut * s1, center.z};
+                p3 = {center.x + rIn * c1, center.y + rIn * s1, center.z};
+            }
+
+            outVerts.push_back({p0, normal, zeroUv, partId});
+            outVerts.push_back({p1, normal, zeroUv, partId});
+            outVerts.push_back({p2, normal, zeroUv, partId});
+
+            outVerts.push_back({p0, normal, zeroUv, partId});
+            outVerts.push_back({p2, normal, zeroUv, partId});
+            outVerts.push_back({p3, normal, zeroUv, partId});
+        }
+    };
+
+    // Helper to add a small 3D center octahedron
+    auto addOctahedron = [&](EdpcVec3 center, float s, uint32_t partId) {
+        EdpcVec3 top{center.x, center.y + s, center.z};
+        EdpcVec3 btm{center.x, center.y - s, center.z};
+        EdpcVec3 px{center.x + s, center.y, center.z};
+        EdpcVec3 nx{center.x - s, center.y, center.z};
+        EdpcVec3 pz{center.x, center.y, center.z + s};
+        EdpcVec3 nz{center.x, center.y, center.z - s};
+
+        auto addTri = [&](EdpcVec3 a, EdpcVec3 b, EdpcVec3 c) {
+            EdpcVec3 n{0.0f, 1.0f, 0.0f};
+            outVerts.push_back({a, n, zeroUv, partId});
+            outVerts.push_back({b, n, zeroUv, partId});
+            outVerts.push_back({c, n, zeroUv, partId});
+        };
+
+        // Top pyramid
+        addTri(top, pz, px);
+        addTri(top, px, nz);
+        addTri(top, nz, nx);
+        addTri(top, nx, pz);
+
+        // Bottom pyramid
+        addTri(btm, px, pz);
+        addTri(btm, nz, px);
+        addTri(btm, nx, nz);
+        addTri(btm, pz, nx);
+    };
+
+    auto addPivotGizmo = [&](EdpcVec3 pos, uint32_t partId) {
+        float rIn = 0.024f;
+        float rOut = 0.038f;
+        addRing(pos, 0, rIn, rOut, partId); // YZ ring (hinge rotation plane)
+        addRing(pos, 1, rIn, rOut, partId); // XZ ring (horizontal)
+        addRing(pos, 2, rIn, rOut, partId); // XY ring (frontal)
+        addOctahedron(pos, 0.015f, partId); // Center core diamond
+    };
+
+    // Base hinge (p1) -> Cyan (part_id 8)
+    addPivotGizmo(m_transformedPivots.p1, 8);
+
+    // Elbow knee hinge (p2) -> Orange (part_id 9)
+    addPivotGizmo(m_transformedPivots.p2, 9);
+
+    // Head / Tip hinge (p3) -> Green (part_id 10)
+    addPivotGizmo(m_transformedPivots.p3, 10);
+
+    // Coupler hinges (p4, p4_elbow) if available
+    if (m_transformedPivots.has_p4) {
+        addPivotGizmo(m_transformedPivots.p4_base, 11);  // Purple (part_id 11)
+        addPivotGizmo(m_transformedPivots.p4_elbow, 12); // Hot Pink (part_id 12)
+    }
+}
+
 void VulkanRenderer::generateCatenaryAndGrid(std::vector<EdpcVertex>& outVerts) {
     EdpcVec2 zeroUv{0.0f, 0.0f};
 
@@ -813,6 +936,9 @@ void VulkanRenderer::startNextFrame() {
             // Append vehicle mesh if present
             if (!m_vehicleMesh.empty()) {
                 fullBuffer.insert(fullBuffer.end(), m_vehicleMesh.begin(), m_vehicleMesh.end());
+            }
+            if (m_showPivots && m_hasPivots) {
+                generatePivotGizmos(fullBuffer);
             }
             generateCatenaryAndGrid(fullBuffer);
             m_meshNeedsUpload = false;

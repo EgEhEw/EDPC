@@ -19,7 +19,7 @@
 #include <QtNetwork/qnetworkreply.h>
 #include <QtNetwork/qnetworkrequest.h>
 
-static const QString APP_VERSION = "v1.0.1";
+static const QString APP_VERSION = "v1.1.0";
 
 MainWindow::MainWindow(QVulkanInstance* vulkanInst, QWidget* parent)
     : QMainWindow(parent),
@@ -347,10 +347,10 @@ void MainWindow::retranslateUi() {
         m_lblProfileInfo->setText(QString("⚡ Script ID: %1_pantograph.js | Model: %2.obj").arg(p.randomScriptId, p.randomModelName));
     }
 
-    if (m_grpModel) m_grpModel->setTitle(isTr ? "1. Pantograf 3D Model İçe Aktarma (.obj)"
-                                              : "1. Pantograph 3D Model Import (.obj)");
-    if (m_txtObjPath) m_txtObjPath->setPlaceholderText(isTr ? "Pantograf .obj dosyasını seçin..."
-                                                            : "Select pantograph .obj file...");
+    if (m_grpModel) m_grpModel->setTitle(isTr ? "1. Pantograf 3D Model İçe Aktarma (.obj, .bbmodel)"
+                                              : "1. Pantograph 3D Model Import (.obj, .bbmodel)");
+    if (m_txtObjPath) m_txtObjPath->setPlaceholderText(isTr ? "Pantograf .obj veya .bbmodel dosyasını seçin..."
+                                                            : "Select pantograph .obj or .bbmodel file...");
     if (m_btnBrowseObj) m_btnBrowseObj->setText(isTr ? "📁 Gözat..." : "📁 Browse...");
     if (m_lblModelInfo && m_objPath.isEmpty()) {
         m_lblModelInfo->setText(isTr ? "Henüz model yüklenmedi. (Gereken parçalar: p_base, p1, p2, p3)"
@@ -387,6 +387,7 @@ void MainWindow::retranslateUi() {
                                             : "3. Live Kinematics & Interactive Test");
     if (m_lblTestHeight) m_lblTestHeight->setText(isTr ? "Simüle Kataner Yüksekliği:" : "Simulated Catenary Height:");
     if (m_chkShowWire) m_chkShowWire->setText(isTr ? "Referans Kataner Telini Göster" : "Show Reference Catenary Wire");
+    if (m_chkShowPivots) m_chkShowPivots->setText(isTr ? "Pantograf Pivot Noktalarını Göster" : "Show Pantograph Pivot Markers");
     if (m_btnResetCam) m_btnResetCam->setText(isTr ? "🎥 Kamerayı Sıfırla" : "🎥 Reset Camera");
     if (m_chkInvertCam) m_chkInvertCam->setText(isTr ? "Ters Kamera (Invert Controls)" : "Invert Orbit Controls");
     if (m_lblTab1Help) m_lblTab1Help->setText(isTr ? "💡 3D Kontroller: Sol Tık: Döndür | Shift+Sol / Orta Tık: Kaydır | Tekerlek: Yakınlaş"
@@ -529,13 +530,13 @@ QWidget* MainWindow::createTab1Pantograph() {
 
     leftLayout->addWidget(m_grpPantoProfile);
 
-    // --- Group 1: OBJ File Selection ---
-    m_grpModel = new QGroupBox("1. Pantograph 3D Model Import (.obj)", leftPanel);
+    // --- Group 1: OBJ / BBModel File Selection ---
+    m_grpModel = new QGroupBox("1. Pantograph 3D Model Import (.obj, .bbmodel)", leftPanel);
     QVBoxLayout* grpModelLayout = new QVBoxLayout(m_grpModel);
 
     QHBoxLayout* fileRow = new QHBoxLayout();
     m_txtObjPath = new QLineEdit(m_grpModel);
-    m_txtObjPath->setPlaceholderText("Select pantograph .obj file...");
+    m_txtObjPath->setPlaceholderText("Select pantograph .obj or .bbmodel file...");
     m_txtObjPath->setReadOnly(true);
     m_btnBrowseObj = new QPushButton("📁 Browse...", m_grpModel);
     connect(m_btnBrowseObj, &QPushButton::clicked, this, &MainWindow::onBrowseModel);
@@ -664,6 +665,13 @@ QWidget* MainWindow::createTab1Pantograph() {
     m_chkShowWire->setChecked(true);
     connect(m_chkShowWire, &QCheckBox::toggled, this, &MainWindow::onShowWireToggled);
     liveLayout->addWidget(m_chkShowWire);
+
+    m_chkShowPivots = new QCheckBox("Show Pantograph Pivot Markers", m_grpLive);
+    m_chkShowPivots->setChecked(true);
+    connect(m_chkShowPivots, &QCheckBox::toggled, this, [this](bool checked) {
+        if (m_viewport) m_viewport->setShowPivots(checked);
+    });
+    liveLayout->addWidget(m_chkShowPivots);
 
     m_lblArmAngles = new QLabel("Lower Arm (p1): -- | Upper Arm (p2): -- | Pushrod (p4): --", m_grpLive);
     m_lblArmAngles->setStyleSheet("font-weight: 600; color: #61afef;");
@@ -1097,14 +1105,30 @@ QWidget* MainWindow::createTab3Export() {
 
 void MainWindow::onBrowseModel() {
     bool isTr = (m_currentLang == AppLanguage::Turkish);
-    QString filter = isTr ? "OBJ 3D Model (*.obj);;Tüm Dosyalar (*.*)" : "OBJ 3D Model (*.obj);;All Files (*.*)";
-    QString path = QFileDialog::getOpenFileName(this, isTr ? "Pantograf .obj Modeli Seç" : "Select Pantograph .obj Model", QString(), filter);
+    QString filter = isTr
+        ? "3D Modeller (*.obj *.bbmodel);;Blockbench Modelleri (*.bbmodel);;OBJ 3D Model (*.obj);;Tüm Dosyalar (*.*)"
+        : "3D Models (*.obj *.bbmodel);;Blockbench Models (*.bbmodel);;OBJ 3D Model (*.obj);;All Files (*.*)";
+    QString path = QFileDialog::getOpenFileName(this, isTr ? "Pantograf Modeli Seç (.obj / .bbmodel)" : "Select Pantograph Model (.obj / .bbmodel)", QString(), filter);
     if (path.isEmpty()) return;
 
-    m_objPath = path;
+    QString finalObjPath = path;
+    if (path.endsWith(".bbmodel", Qt::CaseInsensitive)) {
+        char* converted = edpc_convert_or_fix_bbmodel(path.toUtf8().constData());
+        if (converted) {
+            finalObjPath = QString::fromUtf8(converted);
+            edpc_free_string(converted);
+        } else {
+            QMessageBox::warning(this, isTr ? "Dönüştürme Hatası" : "Conversion Error",
+                isTr ? "Blockbench (.bbmodel) modeli dönüştürülemedi. Dosya biçimini veya içeriğini kontrol edin."
+                     : "Failed to convert Blockbench (.bbmodel) model. Please check the file format or contents.");
+            return;
+        }
+    }
+
+    m_objPath = finalObjPath;
     m_txtObjPath->setText(path);
 
-    QFileInfo fi(path);
+    QFileInfo fi(finalObjPath);
     QString baseName = fi.baseName();
     QString dir = fi.absolutePath();
 

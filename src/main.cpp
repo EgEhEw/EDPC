@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) {
     app.setApplicationName("EDPC");
     app.setApplicationDisplayName("EDPC - EgEhE's Dynamic Pantograph Configurator");
     app.setOrganizationName("EgEhE");
-    app.setApplicationVersion("1.0.1");
+    app.setApplicationVersion("1.1.0");
 
     QPixmap iconPix;
     if (iconPix.loadFromData(EDPC_ICON_PNG, static_cast<uint>(EDPC_ICON_PNG_LEN))) {

@@ -36,6 +36,8 @@ public:
     void updateVehicleMeshData(const std::vector<EdpcVertex>& vertices);
     void updateWireHeight(float height);
     void setShowWire(bool show);
+    void setShowPivots(bool show);
+    void updateTransformedPivots(const EdpcTransformedPivots& pivots);
     void updateTexture(const QImage& image);
     void updateVehicleTexture(const QImage& image);
 
@@ -94,6 +96,10 @@ private:
     std::vector<EdpcVertex> m_vehicleMesh;
     float m_wireHeight;
     bool m_showWire;
+    bool m_showPivots;
+    bool m_hasPivots;
+    EdpcTransformedPivots m_transformedPivots;
+    void generatePivotGizmos(std::vector<EdpcVertex>& outVerts);
     bool m_meshNeedsUpload;
     std::mutex m_meshMutex;
 };

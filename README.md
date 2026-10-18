@@ -13,6 +13,8 @@ I engineered this project as a polyglot systems application utilizing Rust, C++1
 
 2. **Real-Time 3D Kinematic Preview:**
    * Full Vulkan hardware-accelerated 3D viewport.
+   * Direct `.bbmodel` (Blockbench) and `.obj` model import with automated group injection (`p_base`, `p1`, `p2`, `p3`, `p4`) and texture/material extraction.
+   * 3D visual pivot markers (gimbal joints for p1, p2, p3, p4, and p4_elbow) with on/off toggle.
    * Real-time pose calculation of base (`p_base`), lower arm (`p1`), upper arm (`p2`), and collector head (`p3`).
    * Simulated catenary wire inspection, idle park height, and depot park mode simulation.
 
@@ -27,7 +29,7 @@ I engineered this project as a polyglot systems application utilizing Rust, C++1
    * Direct export to an MTR-compatible Minecraft `.zip` resource pack.
 
 5. **Integrated Release Checker:**
-   * Persistent version badge in the bottom status bar (`v1.0.1`).
+   * Persistent version badge in the bottom status bar (`v1.1.0`).
    * One-click release checking with direct link redirection to GitHub Releases.
 
 ---

@@ -45,12 +45,23 @@ typedef struct {
     bool reachable;
 } EdpcAngles;
 
+typedef struct {
+    EdpcVec3 p1;
+    EdpcVec3 p2;
+    EdpcVec3 p3;
+    bool has_p4;
+    EdpcVec3 p4_base;
+    EdpcVec3 p4_elbow;
+} EdpcTransformedPivots;
+
 // Model loading and manipulation
 EdpcModelHandle* edpc_model_load_file(const char* path);
 EdpcModelHandle* edpc_model_load_string(const char* content);
 void edpc_model_free(EdpcModelHandle* handle);
 
+char* edpc_convert_or_fix_bbmodel(const char* bbmodel_path);
 bool edpc_model_get_pivots(const EdpcModelHandle* handle, EdpcPivots* out_pivots);
+bool edpc_model_get_transformed_pivots(const EdpcModelHandle* handle, float current_height, EdpcTransformedPivots* out_pivots);
 bool edpc_model_solve_kinematics(const EdpcModelHandle* handle, float current_height, EdpcAngles* out_angles);
 bool edpc_model_update_transformed_mesh(EdpcModelHandle* handle, float current_height, const EdpcVertex** out_vertices, uint32_t* out_count);
 
