@@ -103,6 +103,18 @@ jobs:
         run: |
           cmake --build build --config Release -v
 
+      - name: Push Error Log on Failure
+        if: failure()
+        shell: bash
+        run: |
+          cmake --build build --config Release -v > error_log.txt 2>&1 || true
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B debug-windows-log
+          git add -f error_log.txt
+          git commit -m "ci: Debug build log for Windows"
+          git push origin debug-windows-log --force
+
       - name: Deploy Qt Runtime and Package
         shell: pwsh
         run: |
