@@ -66,6 +66,11 @@ elseif (DEFINED ENV{VULKAN_SDK})
     target_include_directories(edpc PRIVATE "$ENV{VULKAN_SDK}/Include")
 endif()
 
+if (WIN32 AND DEFINED ENV{VULKAN_SDK})
+    target_include_directories(edpc PRIVATE "$ENV{VULKAN_SDK}/Include" "$ENV{VULKAN_SDK}/include")
+    target_link_directories(edpc PRIVATE "$ENV{VULKAN_SDK}/Lib" "$ENV{VULKAN_SDK}/lib")
+endif()
+
 target_link_libraries(edpc PRIVATE
     Qt6::Core
     Qt6::Gui

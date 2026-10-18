@@ -100,11 +100,17 @@ jobs:
 
       - name: Configure CMake
         run: |
-          $vulkanLib = (Get-ChildItem -Path "$env:VULKAN_SDK" -Filter "vulkan-1.lib" -Recurse | Select-Object -First 1).FullName -replace '\\', '/'
-          $vulkanInc = "$($env:VULKAN_SDK)/Include" -replace '\\', '/'
-          Write-Host "Using Vulkan Library: $vulkanLib"
-          Write-Host "Using Vulkan Include: $vulkanInc"
-          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release "-DVulkan_LIBRARY=$vulkanLib" "-DVulkan_INCLUDE_DIR=$vulkanInc"
+          Write-Host "VULKAN_SDK is: $env:VULKAN_SDK"
+          Write-Host "QT_ROOT_DIR is: $env:QT_ROOT_DIR"
+          $cmakeArgs = @("-B", "build", "-S", ".", "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR")
+          if ($env:VULKAN_SDK -and (Test-Path "$env:VULKAN_SDK/Lib/vulkan-1.lib")) {
+            $vLib = "$env:VULKAN_SDK/Lib/vulkan-1.lib" -replace '\\', '/'
+            $vInc = "$env:VULKAN_SDK/Include" -replace '\\', '/'
+            $cmakeArgs += "-DVulkan_LIBRARY=$vLib"
+            $cmakeArgs += "-DVulkan_INCLUDE_DIR=$vInc"
+            Write-Host "Explicitly passing Vulkan: $vLib"
+          }
+          cmake @cmakeArgs
 
       - name: Build EDPC
         run: |
@@ -116,7 +122,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -B debug-windows-log
-          ninja -C build -v > error_log.txt 2>&1
+          New-Item -ItemType File -Path error_log.txt -Force
+          if (Test-Path build/CMakeFiles/CMakeConfigureLog.yaml) {
+            Add-Content -Path error_log.txt -Value "=== CMakeConfigureLog.yaml ==="
+            Get-Content build/CMakeFiles/CMakeConfigureLog.yaml | Select-Object -Last 100 | Add-Content -Path error_log.txt
+          }
+          if (Test-Path build/build.ninja) {
+            Add-Content -Path error_log.txt -Value "=== Ninja Build Log ==="
+            ninja -C build -v 2>&1 | Add-Content -Path error_log.txt
+          }
           git add -f error_log.txt
           git commit -m "ci: Debug build log for Windows"
           git push origin debug-windows-log --force
