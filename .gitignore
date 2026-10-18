@@ -2,6 +2,9 @@
 build/
 bin/
 out/
+dist/
+*.tar.gz
+*.zip
 edpc_core/target/
 
 # CMake artifacts
