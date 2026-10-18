@@ -72,8 +72,13 @@ fn prepare_panto_obj(obj_path: &str, mtl_name: Option<&str>) -> Result<Vec<u8>, 
     if let Ok(content) = String::from_utf8(raw_bytes.clone()) {
         let mut lines = Vec::new();
         let mut had_mtllib = false;
+        let mut had_usemtl = false;
         for line in content.lines() {
-            if line.trim_start().starts_with("mtllib ") {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("usemtl ") {
+                had_usemtl = true;
+            }
+            if trimmed.starts_with("mtllib ") {
                 lines.push(format!("mtllib {}", mtl));
                 had_mtllib = true;
             } else {
@@ -83,13 +88,24 @@ fn prepare_panto_obj(obj_path: &str, mtl_name: Option<&str>) -> Result<Vec<u8>, 
         if !had_mtllib {
             lines.insert(0, format!("mtllib {}", mtl));
         }
+        if !had_usemtl {
+            let mut fixed_lines = Vec::with_capacity(lines.len() + 16);
+            for l in lines {
+                let is_g = l.trim_start().starts_with("g ");
+                fixed_lines.push(l);
+                if is_g {
+                    fixed_lines.push("usemtl panto".to_string());
+                }
+            }
+            return Ok(fixed_lines.join("\n").into_bytes());
+        }
         Ok(lines.join("\n").into_bytes())
     } else {
         Ok(raw_bytes)
     }
 }
 
-fn prepare_panto_mtl(mtl_path: &str, tex_name: Option<&str>) -> Result<Vec<u8>, String> {
+fn prepare_panto_mtl(mtl_path: &str, tex_name: Option<&str>, obj_bytes: Option<&[u8]>) -> Result<Vec<u8>, String> {
     let raw_bytes = std::fs::read(mtl_path)
         .map_err(|e| format!("Failed to read pantograph MTL file: {}", e))?;
     let Some(tex) = tex_name else {
@@ -97,13 +113,55 @@ fn prepare_panto_mtl(mtl_path: &str, tex_name: Option<&str>) -> Result<Vec<u8>, 
     };
     if let Ok(content) = String::from_utf8(raw_bytes.clone()) {
         let mut lines = Vec::new();
+        let mut defined_materials = HashSet::new();
         for line in content.lines() {
-            if line.trim_start().starts_with("map_Kd ") {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("newmtl ") {
+                let m = trimmed[7..].trim();
+                if !m.is_empty() {
+                    defined_materials.insert(m.to_string());
+                }
+                lines.push(line.to_string());
+            } else if trimmed.starts_with("map_Kd ") {
                 lines.push(format!("map_Kd {}", tex));
             } else {
                 lines.push(line.to_string());
             }
         }
+
+        // Collect all usemtl materials used in the OBJ file
+        let mut used_materials = HashSet::new();
+        if let Some(ob) = obj_bytes {
+            if let Ok(obj_str) = std::str::from_utf8(ob) {
+                for line in obj_str.lines() {
+                    let trimmed = line.trim_start();
+                    if trimmed.starts_with("usemtl ") {
+                        let m = trimmed[7..].trim();
+                        if !m.is_empty() && m != "none" {
+                            used_materials.insert(m.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Ensure "panto" is defined
+        if !defined_materials.contains("panto") {
+            lines.push("newmtl panto".to_string());
+            lines.push(format!("map_Kd {}", tex));
+            defined_materials.insert("panto".to_string());
+        }
+
+        // Ensure every material in the OBJ is defined
+        for mat in used_materials {
+            if !defined_materials.contains(&mat) {
+                lines.push(format!("newmtl {}", mat));
+                lines.push(format!("map_Kd {}", tex));
+                defined_materials.insert(mat);
+            }
+        }
+
+        lines.push("newmtl none".to_string());
         Ok(lines.join("\n").into_bytes())
     } else {
         Ok(raw_bytes)
@@ -167,21 +225,6 @@ fn prepare_active_pantographs(opts: &PackageOptions) -> Result<Vec<PreparedPanto
         let panto_obj_zip_path = format!("assets/mtr/panto/{}.obj", base_name);
         let mtl_name = format!("{}.mtl", base_name);
 
-        let (mtl_zip_path, mtl_bytes) = if let Some(ref mtl_path) = p.panto_mtl_path {
-            if Path::new(mtl_path).exists() {
-                let tex_name = p.panto_texture_path.as_ref().map(|tp| {
-                    let ext = Path::new(tp).extension().and_then(|e| e.to_str()).unwrap_or("png");
-                    format!("{}.{}", base_name, ext)
-                });
-                let bytes = prepare_panto_mtl(mtl_path, tex_name.as_deref())?;
-                (Some(format!("assets/mtr/panto/{}", mtl_name)), Some(bytes))
-            } else {
-                (None, None)
-            }
-        } else {
-            (None, None)
-        };
-
         let (tex_zip_path, tex_bytes) = if let Some(ref tex_path) = p.panto_texture_path {
             if Path::new(tex_path).exists() {
                 let ext = Path::new(tex_path).extension().and_then(|e| e.to_str()).unwrap_or("png");
@@ -196,8 +239,36 @@ fn prepare_active_pantographs(opts: &PackageOptions) -> Result<Vec<PreparedPanto
             (None, None)
         };
 
-        let mtl_ref = if mtl_zip_path.is_some() { Some(mtl_name.as_str()) } else { None };
+        let tex_name = p.panto_texture_path.as_ref().map(|tp| {
+            let ext = Path::new(tp).extension().and_then(|e| e.to_str()).unwrap_or("png");
+            format!("{}.{}", base_name, ext)
+        });
+
+        let mtl_ref = if p.panto_mtl_path.is_some() || tex_name.is_some() {
+            Some(mtl_name.as_str())
+        } else {
+            None
+        };
         let panto_obj_bytes = prepare_panto_obj(&p.panto_obj_path, mtl_ref)?;
+
+        let (mtl_zip_path, mtl_bytes) = if let Some(ref mtl_path) = p.panto_mtl_path {
+            if Path::new(mtl_path).exists() {
+                let bytes = prepare_panto_mtl(mtl_path, tex_name.as_deref(), Some(&panto_obj_bytes))?;
+                (Some(format!("assets/mtr/panto/{}", mtl_name)), Some(bytes))
+            } else if let Some(ref tname) = tex_name {
+                let mut fallback = format!("# Generated by EDPC\nnewmtl panto\nmap_Kd {}\n", tname);
+                fallback.push_str("newmtl none\n");
+                (Some(format!("assets/mtr/panto/{}", mtl_name)), Some(fallback.into_bytes()))
+            } else {
+                (None, None)
+            }
+        } else if let Some(ref tname) = tex_name {
+            let mut fallback = format!("# Generated by EDPC\nnewmtl panto\nmap_Kd {}\n", tname);
+            fallback.push_str("newmtl none\n");
+            (Some(format!("assets/mtr/panto/{}", mtl_name)), Some(fallback.into_bytes()))
+        } else {
+            (None, None)
+        };
 
         let vehicle_ids: HashSet<String> = assigned.into_iter().map(|v| v.id).collect();
 
@@ -836,5 +907,35 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_prepare_panto_obj_and_mtl_material_sync() {
+        let temp_dir = std::env::temp_dir().join("edpc_test_packager_sync");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let test_obj_path = temp_dir.join("test_model.obj");
+        let test_mtl_path = temp_dir.join("test_model.mtl");
+
+        // Write an OBJ with no usemtl and no mtllib
+        let obj_text = "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\ng p_base\nf 1 2 3\n";
+        std::fs::write(&test_obj_path, obj_text).unwrap();
+
+        // Write an MTL with other material
+        let mtl_text = "newmtl custom_mat\nmap_Kd old.png\n";
+        std::fs::write(&test_mtl_path, mtl_text).unwrap();
+
+        let obj_bytes = prepare_panto_obj(test_obj_path.to_str().unwrap(), Some("model123.mtl")).unwrap();
+        let obj_str = String::from_utf8(obj_bytes.clone()).unwrap();
+
+        assert!(obj_str.contains("mtllib model123.mtl"), "Should have updated mtllib");
+        assert!(obj_str.contains("usemtl panto"), "Should have injected usemtl panto");
+
+        let mtl_bytes = prepare_panto_mtl(test_mtl_path.to_str().unwrap(), Some("new_tex.png"), Some(&obj_bytes)).unwrap();
+        let mtl_str = String::from_utf8(mtl_bytes).unwrap();
+
+        assert!(mtl_str.contains("newmtl panto"), "Should have defined newmtl panto");
+        assert!(mtl_str.contains("map_Kd new_tex.png"), "Should have updated map_Kd to new_tex.png");
+        assert!(mtl_str.contains("newmtl custom_mat"), "Should have kept custom_mat");
     }
 }

@@ -29,7 +29,7 @@ I engineered this project as a polyglot systems application utilizing Rust, C++1
    * Direct export to an MTR-compatible Minecraft `.zip` resource pack.
 
 5. **Integrated Release Checker:**
-   * Persistent version badge in the bottom status bar (`v1.1.1`).
+   * Persistent version badge in the bottom status bar (`v1.1.2`).
    * One-click release checking with direct link redirection to GitHub Releases.
 
 ---
