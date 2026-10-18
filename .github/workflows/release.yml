@@ -91,13 +91,17 @@ jobs:
           target: 'desktop'
           cache: true
 
+      - name: Build Rust Core
+        working-directory: edpc_core
+        run: cargo build --release
+
       - name: Configure CMake
         run: |
           cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release
 
       - name: Build EDPC
         run: |
-          cmake --build build --config Release
+          cmake --build build --config Release -v
 
       - name: Deploy Qt Runtime and Package
         shell: pwsh

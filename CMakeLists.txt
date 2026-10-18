@@ -25,13 +25,14 @@ else()
     set(PLATFORM_LIBS pthread dl m)
 endif()
 
-# Custom target to ensure Rust core is always built/updated
-add_custom_target(edpc_core_target
+# Custom command and target to ensure Rust core is built/updated
+add_custom_command(
+    OUTPUT "${EDPC_CORE_LIB}"
     COMMAND cargo build --release
     WORKING_DIRECTORY "${EDPC_CORE_DIR}"
     COMMENT "Building Rust edpc_core static library..."
-    BYPRODUCTS "${EDPC_CORE_LIB}"
 )
+add_custom_target(edpc_core_target DEPENDS "${EDPC_CORE_LIB}")
 
 set(SOURCES
     src/main.cpp
@@ -52,8 +53,12 @@ target_include_directories(edpc PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/include"
 )
 
-if (Vulkan_INCLUDE_DIRS)
+if (TARGET Vulkan::Vulkan)
+    # Modern CMake imported target handles include dirs and libs
+elseif (Vulkan_INCLUDE_DIRS)
     target_include_directories(edpc PRIVATE ${Vulkan_INCLUDE_DIRS})
+elseif (DEFINED ENV{VULKAN_SDK})
+    target_include_directories(edpc PRIVATE "$ENV{VULKAN_SDK}/Include")
 endif()
 
 target_link_libraries(edpc PRIVATE
@@ -65,10 +70,15 @@ target_link_libraries(edpc PRIVATE
     ${PLATFORM_LIBS}
 )
 
-if (Vulkan_LIBRARIES)
+if (TARGET Vulkan::Vulkan)
+    target_link_libraries(edpc PRIVATE Vulkan::Vulkan)
+elseif (Vulkan_LIBRARIES)
     target_link_libraries(edpc PRIVATE ${Vulkan_LIBRARIES})
 else()
     if (WIN32)
+        if (DEFINED ENV{VULKAN_SDK})
+            target_link_directories(edpc PRIVATE "$ENV{VULKAN_SDK}/Lib")
+        endif()
         target_link_libraries(edpc PRIVATE vulkan-1)
     else()
         target_link_libraries(edpc PRIVATE vulkan)
