@@ -529,7 +529,7 @@ void VulkanRenderer::uploadImageToTexture(const QImage& inputImage, uint32_t dst
     imgInfo.extent.depth = 1;
     imgInfo.mipLevels = 1;
     imgInfo.arrayLayers = 1;
-    imgInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    imgInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imgInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -600,7 +600,7 @@ void VulkanRenderer::uploadImageToTexture(const QImage& inputImage, uint32_t dst
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = outImg;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;
@@ -966,8 +966,8 @@ void VulkanRenderer::startNextFrame() {
     QMatrix4x4 view = m_window->getViewMatrix();
     updateUbo(projection, view);
 
-    // Record Commands - clear to dark charcoal matching EDPC dark UI (#15171b)
-    VkClearColorValue clearColor = {{0.008f, 0.009f, 0.011f, 1.0f}};
+    // Record Commands - clear to dark charcoal matching EDPC dark UI (#16171b)
+    VkClearColorValue clearColor = {{0.086f, 0.090f, 0.106f, 1.0f}};
     VkClearDepthStencilValue clearDS = {1.0f, 0};
     VkClearValue clearValues[3];
     clearValues[0].color = clearColor;

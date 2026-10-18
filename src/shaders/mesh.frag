@@ -26,7 +26,7 @@ void main() {
     }
     // 7: Ground grid lines
     if (inPartId == 7u) {
-        outFragColor = vec4(0.028, 0.034, 0.048, 1.0);
+        outFragColor = vec4(0.20, 0.23, 0.30, 1.0);
         return;
     }
     // 8: Pivot p1 (Base) - Vivid Cyan
@@ -74,10 +74,10 @@ void main() {
     }
     vec3 L = normalize(ubo.lightDir.xyz);
     float diff = max(dot(N, L), 0.0);
-    vec3 fillL = normalize(vec3(-ubo.lightDir.x, 0.2, -ubo.lightDir.z));
+    vec3 fillL = normalize(vec3(-ubo.lightDir.x, 0.3, -ubo.lightDir.z));
     float fillDiff = max(dot(N, fillL), 0.0) * 0.25;
-    float ambient = 0.35;
-    vec3 finalRgb = baseColor * (ambient + diff * 0.55 + fillDiff);
+    float ambient = 0.65;
+    vec3 finalRgb = baseColor * min(ambient + diff * 0.45 + fillDiff, 1.15);
 
     outFragColor = vec4(finalRgb, 1.0);
 }
