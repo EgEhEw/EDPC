@@ -60,3 +60,16 @@ cargo build --release --manifest-path edpc_core/Cargo.toml
 cmake -B build -S .
 cmake --build build
 ```
+
+---
+
+## 📄 Lisans & Telif Hakkı (License & Copyright)
+
+Bu proje **GNU General Public License v3.0 (GPL-3.0)** ile korunmaktadır.
+
+- **Orijinal Geliştirici:** **EgEhEw** (<egegokcuogli@hotmail.com>)
+- **Kullanım ve Fork Kuralları:**
+  - Yazılımı dilediğiniz gibi kullanabilir, inceleyebilir, değiştirebilir ve fork edebilirsiniz.
+  - **Copyleft Zorunluluğu:** Yapılan her değişiklik ve türetilen her fork da **aynı şekilde açık kaynak (GPL-3.0)** kalmak zorundadır (kapalı kaynak / ticari olarak gizlenemez).
+  - **Atıf Zorunluluğu:** Orijinal geliştirici (**EgEhEw**) bilgisi ve telif hakkı metni korunmalıdır.
+
