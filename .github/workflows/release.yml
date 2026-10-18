@@ -100,7 +100,7 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release "-DVulkan_INCLUDE_DIR=$($env:VULKAN_SDK)/Include" "-DVulkan_LIBRARY=$($env:VULKAN_SDK)/Lib/vulkan-1.lib"
+          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release
 
       - name: Build EDPC
         run: |
