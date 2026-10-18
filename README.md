@@ -68,13 +68,3 @@ cmake --build build -j$(nproc)
 ```
 
 ---
-
-## License and Copyright
-
-This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
-
-* **Author and Copyright:** **EgEhEw** (<egegokcuogli@hotmail.com>)
-* **Terms and Conditions:**
-  * You are free to run, study, modify, and redistribute this software.
-  * **Copyleft Requirement:** Any modified or derivative works, including forks, must remain open-source under the identical **GNU GPL-3.0** license. Closed-source or proprietary redistribution of derived code is strictly prohibited.
-  * **Attribution Requirement:** All original copyright notices and developer attribution to **EgEhEw** must be preserved in all copies and substantial portions of the software.
