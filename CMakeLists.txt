@@ -8,6 +8,11 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+if (MSVC)
+    add_compile_options(/utf-8 /EHsc)
+    add_definitions(-DNOMINMAX)
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
 find_package(Vulkan)
 
