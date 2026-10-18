@@ -126,7 +126,7 @@ jobs:
           Copy-Item build/edpc.exe win-pkg/
           Copy-Item README.md win-pkg/
           Copy-Item LICENSE win-pkg/
-          windeployqt --release --compiler-runtime --no-translations win-pkg/edpc.exe
+          windeployqt --release --compiler-runtime --no-translations --no-opengl-sw win-pkg/edpc.exe
           Compress-Archive -Path win-pkg/* -DestinationPath EDPC-${{ github.ref_name }}-windows-x64.zip
 
       - name: Upload Windows Artifact

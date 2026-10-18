@@ -26,7 +26,7 @@ void main() {
     }
     // 7: Ground grid lines
     if (inPartId == 7u) {
-        outFragColor = vec4(0.30, 0.33, 0.38, 1.0);
+        outFragColor = vec4(0.028, 0.034, 0.048, 1.0);
         return;
     }
 

@@ -840,12 +840,15 @@ void VulkanRenderer::startNextFrame() {
     QMatrix4x4 view = m_window->getViewMatrix();
     updateUbo(projection, view);
 
-    // Record Commands
-    VkClearColorValue clearColor = {{0.08f, 0.09f, 0.11f, 1.0f}};
+    // Record Commands - clear to dark charcoal matching EDPC dark UI (#15171b)
+    VkClearColorValue clearColor = {{0.008f, 0.009f, 0.011f, 1.0f}};
     VkClearDepthStencilValue clearDS = {1.0f, 0};
-    VkClearValue clearValues[2];
+    VkClearValue clearValues[3];
     clearValues[0].color = clearColor;
     clearValues[1].depthStencil = clearDS;
+    clearValues[2].color = clearColor;
+
+    const bool multisampled = (m_window->sampleCountFlagBits() > VK_SAMPLE_COUNT_1_BIT);
 
     VkRenderPassBeginInfo rpBeginInfo = {};
     rpBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -853,7 +856,7 @@ void VulkanRenderer::startNextFrame() {
     rpBeginInfo.framebuffer = m_window->currentFramebuffer();
     rpBeginInfo.renderArea.extent.width = sz.width();
     rpBeginInfo.renderArea.extent.height = sz.height();
-    rpBeginInfo.clearValueCount = 2;
+    rpBeginInfo.clearValueCount = multisampled ? 3 : 2;
     rpBeginInfo.pClearValues = clearValues;
 
     m_devFuncs->vkCmdBeginRenderPass(cb, &rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
