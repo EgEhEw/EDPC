@@ -87,9 +87,8 @@ jobs:
         id: install-qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.2'
+          version: '6.8.2'
           target: 'desktop'
-          arch: 'win64_msvc2022_64'
           cache: true
 
       - name: Configure CMake
@@ -119,18 +118,20 @@ jobs:
   publish-release:
     name: Publish Release Assets
     needs: [build-linux-appimage, build-windows]
+    if: always() && !cancelled() && (needs.build-linux-appimage.result == 'success' || needs.build-windows.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/linux-appimage/*.AppImage
-            artifacts/windows-zip/*.zip
+            artifacts/*.AppImage
+            artifacts/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
