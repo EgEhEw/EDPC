@@ -19,7 +19,7 @@
 #include <QtNetwork/qnetworkreply.h>
 #include <QtNetwork/qnetworkrequest.h>
 
-static const QString APP_VERSION = "v1.1";
+static const QString APP_VERSION = "v1.0.1";
 
 MainWindow::MainWindow(QVulkanInstance* vulkanInst, QWidget* parent)
     : QMainWindow(parent),
@@ -2492,8 +2492,17 @@ void MainWindow::onUpdateReplyFinished(QNetworkReply* reply) {
         return;
     }
 
-    // Compare version tag (e.g. "v1.1" vs "v1.0")
-    if (latestTag != APP_VERSION && !latestTag.isEmpty()) {
+    // Compare SemVer version tags (e.g. "v1.0.1" vs "v1.0.0")
+    auto parseSemVer = [](QString s) -> std::tuple<int, int, int> {
+        if (s.startsWith('v', Qt::CaseInsensitive)) s.remove(0, 1);
+        QStringList parts = s.split('.');
+        int maj = parts.value(0).toInt();
+        int min = parts.value(1).toInt();
+        int pat = parts.value(2).toInt();
+        return {maj, min, pat};
+    };
+
+    if (parseSemVer(latestTag) > parseSemVer(APP_VERSION)) {
         auto res = QMessageBox::question(this,
             isTr ? "Yeni Sürüm Mevcut! 🚀" : "New Version Available! 🚀",
             isTr ? QString("Yeni bir EDPC sürümü yayınlandı: <b>%1</b> (Mevcut: %2)<br><br>"
