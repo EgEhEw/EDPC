@@ -44,10 +44,15 @@ void main() {
     vec3 baseColor = texColor.rgb;
 
     vec3 N = normalize(inNormal);
+    if (!gl_FrontFacing) {
+        N = -N;
+    }
     vec3 L = normalize(ubo.lightDir.xyz);
     float diff = max(dot(N, L), 0.0);
-    float ambient = 0.45;
-    vec3 finalRgb = baseColor * (ambient + diff * 0.55);
+    vec3 fillL = normalize(vec3(-ubo.lightDir.x, 0.2, -ubo.lightDir.z));
+    float fillDiff = max(dot(N, fillL), 0.0) * 0.25;
+    float ambient = 0.35;
+    vec3 finalRgb = baseColor * (ambient + diff * 0.55 + fillDiff);
 
     outFragColor = vec4(finalRgb, 1.0);
 }

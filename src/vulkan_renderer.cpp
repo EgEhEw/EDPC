@@ -449,11 +449,11 @@ void VulkanRenderer::endSingleTimeCommands(VkCommandBuffer cb) {
 
 void VulkanRenderer::createDefaultTextures() {
     QImage defaultPantoImg(2, 2, QImage::Format_RGBA8888);
-    defaultPantoImg.fill(QColor(220, 225, 230, 255));
+    defaultPantoImg.fill(QColor(160, 165, 175, 255));
     uploadImageToTexture(defaultPantoImg, 1, m_textureImage, m_textureMem, m_textureView, m_textureSampler);
 
     QImage defaultVehicleImg(2, 2, QImage::Format_RGBA8888);
-    defaultVehicleImg.fill(QColor(180, 190, 205, 255));
+    defaultVehicleImg.fill(QColor(140, 150, 165, 255));
     uploadImageToTexture(defaultVehicleImg, 2, m_vehicleTextureImage, m_vehicleTextureMem, m_vehicleTextureView, m_vehicleTextureSampler);
 }
 
@@ -526,7 +526,7 @@ void VulkanRenderer::uploadImageToTexture(const QImage& inputImage, uint32_t dst
     imgInfo.extent.depth = 1;
     imgInfo.mipLevels = 1;
     imgInfo.arrayLayers = 1;
-    imgInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imgInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
     imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imgInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -597,7 +597,7 @@ void VulkanRenderer::uploadImageToTexture(const QImage& inputImage, uint32_t dst
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = outImg;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;
@@ -783,7 +783,7 @@ void VulkanRenderer::startNextFrame() {
                 uploadImageToTexture(cached, 1, m_textureImage, m_textureMem, m_textureView, m_textureSampler);
             } else {
                 QImage defaultPantoImg(2, 2, QImage::Format_RGBA8888);
-                defaultPantoImg.fill(QColor(220, 225, 230, 255));
+                defaultPantoImg.fill(QColor(160, 165, 175, 255));
                 uploadImageToTexture(defaultPantoImg, 1, m_textureImage, m_textureMem, m_textureView, m_textureSampler);
             }
         }
@@ -797,7 +797,7 @@ void VulkanRenderer::startNextFrame() {
                 uploadImageToTexture(cachedVehicle, 2, m_vehicleTextureImage, m_vehicleTextureMem, m_vehicleTextureView, m_vehicleTextureSampler);
             } else {
                 QImage defaultVehicleImg(2, 2, QImage::Format_RGBA8888);
-                defaultVehicleImg.fill(QColor(180, 190, 205, 255));
+                defaultVehicleImg.fill(QColor(140, 150, 165, 255));
                 uploadImageToTexture(defaultVehicleImg, 2, m_vehicleTextureImage, m_vehicleTextureMem, m_vehicleTextureView, m_vehicleTextureSampler);
             }
         }

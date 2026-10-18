@@ -19,7 +19,7 @@
 #include <QtNetwork/qnetworkreply.h>
 #include <QtNetwork/qnetworkrequest.h>
 
-static const QString APP_VERSION = "v1.0";
+static const QString APP_VERSION = "v1.1";
 
 MainWindow::MainWindow(QVulkanInstance* vulkanInst, QWidget* parent)
     : QMainWindow(parent),
@@ -1114,6 +1114,7 @@ void MainWindow::onBrowseModel() {
     QString candidateMtl = dir + "/" + baseName + ".mtl";
     m_mtlPath.clear();
     m_texturePath.clear();
+    QColor mtlKdColor;
 
     if (QFile::exists(candidateMtl)) {
         m_mtlPath = candidateMtl;
@@ -1127,6 +1128,14 @@ void MainWindow::onBrowseModel() {
                     if (QFile::exists(fullTex)) {
                         m_texturePath = fullTex;
                         break;
+                    }
+                } else if (line.startsWith("Kd ", Qt::CaseInsensitive) && !mtlKdColor.isValid()) {
+                    QStringList parts = line.mid(3).trimmed().split(' ', Qt::SkipEmptyParts);
+                    if (parts.size() >= 3) {
+                        float r = parts[0].toFloat();
+                        float g = parts[1].toFloat();
+                        float b = parts[2].toFloat();
+                        mtlKdColor = QColor::fromRgbF(qBound(0.0f, r, 1.0f), qBound(0.0f, g, 1.0f), qBound(0.0f, b, 1.0f));
                     }
                 }
             }
@@ -1167,6 +1176,9 @@ void MainWindow::onBrowseModel() {
 
         if (!m_texturePath.isEmpty()) {
             curPanto.textureImage.load(m_texturePath);
+        } else if (mtlKdColor.isValid()) {
+            curPanto.textureImage = QImage(16, 16, QImage::Format_RGBA8888);
+            curPanto.textureImage.fill(mtlKdColor);
         } else {
             curPanto.textureImage = QImage();
         }
@@ -1182,6 +1194,10 @@ void MainWindow::onBrowseModel() {
         m_viewport->loadModel(m_objPath);
         if (!m_texturePath.isEmpty()) {
             m_viewport->loadTexture(m_texturePath);
+        } else if (mtlKdColor.isValid()) {
+            QImage kdImg(16, 16, QImage::Format_RGBA8888);
+            kdImg.fill(mtlKdColor);
+            m_viewport->setTextureImage(kdImg);
         }
 
         EdpcPivots pivots;
