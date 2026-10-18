@@ -1,0 +1,46 @@
+name: Release EDPC
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies (Qt6, Vulkan, CMake, Ninja)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build qt6-base-dev libgl1-mesa-dev libvulkan-dev
+
+      - name: Configure CMake
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build EDPC
+        run: cmake --build build --config Release
+
+      - name: Package Release Archive
+        run: |
+          mkdir -p release-pkg
+          cp build/edpc release-pkg/
+          cp run_edpc.sh release-pkg/
+          cp README.md release-pkg/
+          strip release-pkg/edpc
+          tar -czvf edpc-${{ github.ref_name }}-linux-x86_64.tar.gz -C release-pkg edpc run_edpc.sh README.md
+
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: edpc-${{ github.ref_name }}-linux-x86_64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
