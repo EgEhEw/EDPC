@@ -1,0 +1,53 @@
+# Build artifacts
+build/
+bin/
+out/
+edpc_core/target/
+
+# CMake artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+compile_commands.json
+.cache/
+
+# Qt / moc / autogen artifacts
+*.moc
+moc_*.cpp
+moc_*.h
+ui_*.h
+qrc_*.cpp
+*.qmlc
+*.jsc
+edpc_autogen/
+
+# Compiled Object files & binaries
+*.slo
+*.lo
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+edpc
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.user
+*.user.*
+*.suo
+*.sln
+*.vcxproj
+*.vcxproj.filters
+
+# Temporary & OS files
+*.swp
+*~
+.DS_Store
+Thumbs.db
