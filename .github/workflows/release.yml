@@ -100,7 +100,11 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+          $vulkanLib = (Get-ChildItem -Path "$env:VULKAN_SDK" -Filter "vulkan-1.lib" -Recurse | Select-Object -First 1).FullName -replace '\\', '/'
+          $vulkanInc = "$($env:VULKAN_SDK)/Include" -replace '\\', '/'
+          Write-Host "Using Vulkan Library: $vulkanLib"
+          Write-Host "Using Vulkan Include: $vulkanInc"
+          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release "-DVulkan_LIBRARY=$vulkanLib" "-DVulkan_INCLUDE_DIR=$vulkanInc"
 
       - name: Build EDPC
         run: |
