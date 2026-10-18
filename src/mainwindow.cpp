@@ -19,7 +19,7 @@
 #include <QtNetwork/qnetworkreply.h>
 #include <QtNetwork/qnetworkrequest.h>
 
-static const QString APP_VERSION = "v1.1.0";
+static const QString APP_VERSION = "v1.1.1";
 
 MainWindow::MainWindow(QVulkanInstance* vulkanInst, QWidget* parent)
     : QMainWindow(parent),

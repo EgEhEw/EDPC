@@ -121,21 +121,6 @@ pub fn calculate_pivots_from_bbmodel(root: &serde_json::Value) -> Vec<String> {
     if let Some(p4_grp) = p4_group_val {
         if let (Some(p4_orig), Some(p2_orig)) = (origin_by_group.get("p4"), origin_by_group.get("p2")) {
             let mut p4_uuids = HashSet::new();
-            fn find_uuids(node: &serde_json::Value, uuids: &mut HashSet<String>, target_uuid: Option<&str>) {
-                if let Some(u) = node.as_str() {
-                    uuids.insert(u.to_string());
-                } else if let Some(obj) = node.as_object() {
-                    let is_target = obj.get("name").and_then(|n| n.as_str()) == Some("p4")
-                        || (target_uuid.is_some() && obj.get("uuid").and_then(|u| u.as_str()) == target_uuid);
-                    if is_target {
-                        collect_all(node, uuids);
-                    } else if let Some(children) = obj.get("children").and_then(|c| c.as_array()) {
-                        for c in children {
-                            find_uuids(c, uuids, target_uuid);
-                        }
-                    }
-                }
-            }
             fn collect_all(node: &serde_json::Value, uuids: &mut HashSet<String>) {
                 if let Some(u) = node.as_str() {
                     uuids.insert(u.to_string());
@@ -146,10 +131,24 @@ pub fn calculate_pivots_from_bbmodel(root: &serde_json::Value) -> Vec<String> {
                 }
             }
 
+            fn find_p4_and_collect(node: &serde_json::Value, uuids: &mut HashSet<String>, target_uuid: Option<&str>) {
+                if let Some(obj) = node.as_object() {
+                    let is_target = obj.get("name").and_then(|n| n.as_str()) == Some("p4")
+                        || (target_uuid.is_some() && obj.get("uuid").and_then(|u| u.as_str()) == target_uuid);
+                    if is_target {
+                        collect_all(node, uuids);
+                    } else if let Some(children) = obj.get("children").and_then(|c| c.as_array()) {
+                        for c in children {
+                            find_p4_and_collect(c, uuids, target_uuid);
+                        }
+                    }
+                }
+            }
+
             let p4_uuid = p4_grp.get("uuid").and_then(|u| u.as_str());
             if let Some(outliner) = root.get("outliner").and_then(|o| o.as_array()) {
                 for node in outliner {
-                    find_uuids(node, &mut p4_uuids, p4_uuid);
+                    find_p4_and_collect(node, &mut p4_uuids, p4_uuid);
                 }
             }
             if let Some(children) = p4_grp.get("children").and_then(|c| c.as_array()) {
@@ -735,4 +734,27 @@ fn generate_obj_from_bbmodel(
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_pivots_abb_panto() {
+        let path = "/home/ege/Genel/EgEhE's trainthings/scripts/tools/abb-panto.bbmodel";
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        let json_text = std::fs::read_to_string(path).unwrap();
+        let root: serde_json::Value = serde_json::from_str(&json_text).unwrap();
+        let pivots = calculate_pivots_from_bbmodel(&root);
+        println!("Calculated pivots:\n{:#?}", pivots);
+
+        assert_eq!(pivots[0], "# pivot p1 0 0.18357 0.11706");
+        assert_eq!(pivots[1], "# pivot p2 0 0.83591 -1.21875");
+        assert_eq!(pivots[2], "# pivot p3 0 1.42328 0.0875");
+        assert_eq!(pivots[3], "# pivot p4 0 0.2156 -0.32557");
+        assert_eq!(pivots[4], "# pivot p4_elbow 0 0.75445 -1.37158");
+    }
 }
