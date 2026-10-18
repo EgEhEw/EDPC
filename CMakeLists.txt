@@ -14,7 +14,6 @@ if (MSVC)
 endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
-find_package(Vulkan REQUIRED)
 
 set(EDPC_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/edpc_core")
 
@@ -58,19 +57,6 @@ target_include_directories(edpc PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/include"
 )
 
-if (TARGET Vulkan::Vulkan)
-    # Modern CMake imported target handles include dirs and libs
-elseif (Vulkan_INCLUDE_DIRS)
-    target_include_directories(edpc PRIVATE ${Vulkan_INCLUDE_DIRS})
-elseif (DEFINED ENV{VULKAN_SDK})
-    target_include_directories(edpc PRIVATE "$ENV{VULKAN_SDK}/Include")
-endif()
-
-if (WIN32 AND DEFINED ENV{VULKAN_SDK})
-    target_include_directories(edpc PRIVATE "$ENV{VULKAN_SDK}/Include" "$ENV{VULKAN_SDK}/include")
-    target_link_directories(edpc PRIVATE "$ENV{VULKAN_SDK}/Lib" "$ENV{VULKAN_SDK}/lib")
-endif()
-
 target_link_libraries(edpc PRIVATE
     Qt6::Core
     Qt6::Gui
@@ -79,20 +65,6 @@ target_link_libraries(edpc PRIVATE
     "${EDPC_CORE_LIB}"
     ${PLATFORM_LIBS}
 )
-
-if (TARGET Vulkan::Vulkan)
-    target_link_libraries(edpc PRIVATE Vulkan::Vulkan)
-elseif (Vulkan_LIBRARIES)
-    target_link_libraries(edpc PRIVATE ${Vulkan_LIBRARIES})
-elseif (Vulkan_LIBRARY)
-    target_link_libraries(edpc PRIVATE ${Vulkan_LIBRARY})
-else()
-    if (WIN32)
-        target_link_libraries(edpc PRIVATE vulkan-1)
-    else()
-        target_link_libraries(edpc PRIVATE vulkan)
-    endif()
-endif()
 
 install(TARGETS edpc RUNTIME DESTINATION bin)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/edpc.desktop" DESTINATION share/applications)

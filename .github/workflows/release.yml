@@ -80,13 +80,6 @@ jobs:
       - name: Install Ninja
         run: choco install ninja -y
 
-      - name: Prepare Vulkan SDK
-        uses: humbletim/setup-vulkan-sdk@v1.2.1
-        with:
-          vulkan-query-version: 'latest'
-          vulkan-components: 'Vulkan-Headers, Vulkan-Loader'
-          vulkan-use-cache: true
-
       - name: Install Qt 6
         id: install-qt
         uses: jurplel/install-qt-action@v4
@@ -101,10 +94,8 @@ jobs:
 
       - name: Configure CMake
         run: |
-          Write-Host "VULKAN_SDK is: $env:VULKAN_SDK"
           Write-Host "QT_ROOT_DIR is: $env:QT_ROOT_DIR"
-          Get-ChildItem -Path "$env:VULKAN_SDK" -Recurse | Select-Object -First 20 FullName
-          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$($env:QT_ROOT_DIR);$($env:VULKAN_SDK)"
+          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
 
       - name: Build EDPC
         run: |
