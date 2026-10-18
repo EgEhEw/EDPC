@@ -4,13 +4,15 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
+  build-linux-appimage:
+    name: Build Linux AppImage
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,29 +20,117 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install system dependencies (Qt6, Vulkan, CMake, Ninja)
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build qt6-base-dev libgl1-mesa-dev libvulkan-dev
+          sudo apt-get install -y cmake ninja-build qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev libvulkan-dev libfuse2 file desktop-file-utils
 
       - name: Configure CMake
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+
+      - name: Build and Install into AppDir
+        run: |
+          cmake --build build --config Release
+          DESTDIR=${{ github.workspace }}/AppDir cmake --install build
+
+      - name: Install LinuxDeploy
+        id: install-linuxdeploy
+        uses: miurahr/install-linuxdeploy-action@v1.8.0
+        with:
+          plugins: qt appimage
+
+      - name: Create AppImage
+        env:
+          QMAKE: /usr/bin/qmake6
+        run: |
+          ${{ steps.install-linuxdeploy.outputs.linuxdeploy }} \
+            --appdir ${{ github.workspace }}/AppDir \
+            --desktop-file ${{ github.workspace }}/assets/edpc.desktop \
+            --icon-file ${{ github.workspace }}/assets/edpc.png \
+            --executable ${{ github.workspace }}/AppDir/usr/bin/edpc \
+            --plugin qt \
+            --output appimage
+          mv EDPC-*.AppImage EDPC-${{ github.ref_name }}-x86_64.AppImage
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: EDPC-*-x86_64.AppImage
+
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup MSVC developer prompt
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Ninja
+        run: choco install ninja -y
+
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: latest
+          cache: true
+
+      - name: Install Qt 6
+        id: install-qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.2'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          cache: true
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . -G "Ninja" -DCMAKE_BUILD_TYPE=Release
 
       - name: Build EDPC
-        run: cmake --build build --config Release
-
-      - name: Package Release Archive
         run: |
-          mkdir -p release-pkg
-          cp build/edpc release-pkg/
-          cp run_edpc.sh release-pkg/
-          cp README.md release-pkg/
-          strip release-pkg/edpc
-          tar -czvf edpc-${{ github.ref_name }}-linux-x86_64.tar.gz -C release-pkg edpc run_edpc.sh README.md
+          cmake --build build --config Release
 
-      - name: Create GitHub Release and Upload Assets
+      - name: Deploy Qt Runtime and Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path win-pkg -Force
+          Copy-Item build/edpc.exe win-pkg/
+          Copy-Item README.md win-pkg/
+          Copy-Item LICENSE win-pkg/
+          windeployqt --release --compiler-runtime --no-translations win-pkg/edpc.exe
+          Compress-Archive -Path win-pkg/* -DestinationPath EDPC-${{ github.ref_name }}-windows-x64.zip
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: EDPC-*-windows-x64.zip
+
+  publish-release:
+    name: Publish Release Assets
+    needs: [build-linux-appimage, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: edpc-${{ github.ref_name }}-linux-x86_64.tar.gz
+          files: |
+            artifacts/linux-appimage/*.AppImage
+            artifacts/windows-zip/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

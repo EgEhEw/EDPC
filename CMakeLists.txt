@@ -12,7 +12,18 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
 find_package(Vulkan)
 
 set(EDPC_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/edpc_core")
-set(EDPC_CORE_LIB "${EDPC_CORE_DIR}/target/release/libedpc_core.a")
+
+if (WIN32)
+    if (MSVC)
+        set(EDPC_CORE_LIB "${EDPC_CORE_DIR}/target/release/edpc_core.lib")
+    else()
+        set(EDPC_CORE_LIB "${EDPC_CORE_DIR}/target/release/libedpc_core.a")
+    endif()
+    set(PLATFORM_LIBS ws2_32 userenv bcrypt ntdll)
+else()
+    set(EDPC_CORE_LIB "${EDPC_CORE_DIR}/target/release/libedpc_core.a")
+    set(PLATFORM_LIBS pthread dl m)
+endif()
 
 # Custom target to ensure Rust core is always built/updated
 add_custom_target(edpc_core_target
@@ -51,13 +62,20 @@ target_link_libraries(edpc PRIVATE
     Qt6::Widgets
     Qt6::Network
     "${EDPC_CORE_LIB}"
-    pthread
-    dl
-    m
+    ${PLATFORM_LIBS}
 )
 
 if (Vulkan_LIBRARIES)
     target_link_libraries(edpc PRIVATE ${Vulkan_LIBRARIES})
 else()
-    target_link_libraries(edpc PRIVATE vulkan)
+    if (WIN32)
+        target_link_libraries(edpc PRIVATE vulkan-1)
+    else()
+        target_link_libraries(edpc PRIVATE vulkan)
+    endif()
 endif()
+
+install(TARGETS edpc RUNTIME DESTINATION bin)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/edpc.desktop" DESTINATION share/applications)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/edpc.png" DESTINATION share/icons/hicolor/256x256/apps)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/edpc.png" DESTINATION share/pixmaps)

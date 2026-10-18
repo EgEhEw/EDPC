@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=EDPC
+Comment=Dynamic Pantograph Configurator for Minecraft Transit Railway
+Exec=edpc
+Icon=edpc
+Categories=Utility;Development;
+Terminal=false
