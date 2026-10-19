@@ -40,6 +40,8 @@ struct PantographProfile {
     double lowerThresh = -3.0;
     float nominalTipHeight = 1.4480f;
     float shoeOffset = 0.1048f;
+    bool customPivotsSet = false;
+    EdpcPivots customPivots{};
     EdpcModelHandle* modelHandle = nullptr;
     QImage textureImage;
 
@@ -102,6 +104,8 @@ private slots:
     void onShowWireToggled(bool checked);
     void onDepotParkToggled(bool checked);
     void onKinematicsUpdated(float height, float angle1, float angle2, float angle4, bool reachable);
+    void onPivotSpinboxChanged();
+    void onResetPivots();
 
     // Tab 2 Slots
     void onBrowsePackZip();
@@ -157,6 +161,7 @@ private:
     void syncCurrentPantoUiToProfile();
     void loadPantoProfileToUi(int index);
     void updatePantographCombos();
+    void populatePivotSpinboxes(const EdpcPivots& p);
 
     QVulkanInstance* m_vulkanInst;
     VulkanViewport* m_viewport;
@@ -179,6 +184,27 @@ private:
     QPushButton* m_btnBrowseObj;
     QLabel* m_lblModelInfo;
     QLabel* m_lblPivotsInfo;
+
+    QGroupBox* m_grpPivots;
+    QLabel* m_lblPivotHelp;
+    QLabel* m_lblP1;
+    QLabel* m_lblP2;
+    QLabel* m_lblP3;
+    QLabel* m_lblP4;
+    QLabel* m_lblP4Elbow;
+    QDoubleSpinBox* m_spinP1Y;
+    QDoubleSpinBox* m_spinP1Z;
+    QDoubleSpinBox* m_spinP2Y;
+    QDoubleSpinBox* m_spinP2Z;
+    QDoubleSpinBox* m_spinP3Y;
+    QDoubleSpinBox* m_spinP3Z;
+    QCheckBox* m_chkP4Enabled;
+    QDoubleSpinBox* m_spinP4BaseY;
+    QDoubleSpinBox* m_spinP4BaseZ;
+    QDoubleSpinBox* m_spinP4ElbowY;
+    QDoubleSpinBox* m_spinP4ElbowZ;
+    QPushButton* m_btnResetPivots;
+    bool m_syncingPivots = false;
 
     QGroupBox* m_grpParams;
     QLabel* m_lblWireRef;

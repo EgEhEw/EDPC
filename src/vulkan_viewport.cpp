@@ -227,6 +227,15 @@ bool VulkanViewport::getPivots(EdpcPivots* outPivots) const {
     return edpc_model_get_pivots(m_model, outPivots);
 }
 
+bool VulkanViewport::setPivots(const EdpcPivots& pivots) {
+    if (!m_model) return false;
+    if (!edpc_model_set_pivots(m_model, &pivots)) {
+        return false;
+    }
+    applyModelKinematics();
+    return true;
+}
+
 bool VulkanViewport::solveKinematics(float height, EdpcAngles* outAngles) const {
     if (!m_model || !outAngles) return false;
     return edpc_model_solve_kinematics(m_model, height, outAngles);

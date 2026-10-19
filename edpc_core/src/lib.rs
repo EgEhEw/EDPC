@@ -27,6 +27,7 @@ pub struct EdpcVehicleMesh {
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct EdpcPivots {
     pub base: Vec3,
     pub elbow: Vec3,
@@ -139,6 +140,287 @@ pub unsafe extern "C" fn edpc_model_get_pivots(
     true
 }
 
+pub fn update_obj_pivots(content: &str, p: &EdpcPivots) -> Option<String> {
+    // 1. Parse original pivots from OBJ to calculate deltas
+    let orig_model = PantographModel::from_obj_string(content).ok();
+    let orig_base = orig_model.as_ref().map(|m| m.pivots.base).unwrap_or(p.base);
+    let orig_p4_base = orig_model.as_ref().and_then(|m| m.pivots.p4_base);
+    let orig_p4_elbow = orig_model.as_ref().and_then(|m| m.pivots.p4_elbow);
+
+    let delta_p1 = Vec3::new(p.base.x - orig_base.x, p.base.y - orig_base.y, p.base.z - orig_base.z);
+    let delta_p4 = if let (true, Some(orig_b)) = (p.has_p4, orig_p4_base) {
+        Vec3::new(p.p4_base.x - orig_b.x, p.p4_base.y - orig_b.y, p.p4_base.z - orig_b.z)
+    } else {
+        Vec3::default()
+    };
+
+    let shift_p1 = delta_p1.x.abs() > 1e-6 || delta_p1.y.abs() > 1e-6 || delta_p1.z.abs() > 1e-6;
+
+    // Check if p4 can be mapped between base and elbow hinges
+    let can_map_p4_obj = if p.has_p4 {
+        if let (Some(ob), Some(oe)) = (orig_p4_base, orig_p4_elbow) {
+            let dy_orig = oe.y - ob.y;
+            let dz_orig = oe.z - ob.z;
+            let lo = dy_orig.hypot(dz_orig);
+
+            let dy_new = p.p4_elbow.y - p.p4_base.y;
+            let dz_new = p.p4_elbow.z - p.p4_base.z;
+            let ln = dy_new.hypot(dz_new);
+
+            if lo > 1e-4 && ln > 1e-4 {
+                let to = dy_orig.atan2(dz_orig);
+                let tn = dy_new.atan2(dz_new);
+                let changed = (ob.x - p.p4_base.x).abs() > 1e-6
+                    || (ob.y - p.p4_base.y).abs() > 1e-6
+                    || (ob.z - p.p4_base.z).abs() > 1e-6
+                    || (oe.y - p.p4_elbow.y).abs() > 1e-6
+                    || (oe.z - p.p4_elbow.z).abs() > 1e-6;
+                if changed {
+                    Some((ob, to, tn, ln / lo))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let shift_p4_rigid = can_map_p4_obj.is_none() && (delta_p4.x.abs() > 1e-6 || delta_p4.y.abs() > 1e-6 || delta_p4.z.abs() > 1e-6);
+
+    // 2. Identify which vertex indices belong to p1 and p4
+    let mut p1_v_indices = std::collections::HashSet::new();
+    let mut p4_v_indices = std::collections::HashSet::new();
+    let mut cur_group = "p_base".to_string();
+    let mut v_idx = 0usize;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("g ") {
+            let g = trimmed[2..].trim();
+            if !g.is_empty() {
+                cur_group = PantographModel::normalize_group_name(g);
+            }
+        } else if trimmed.starts_with("o ") {
+            let o = trimmed[2..].trim();
+            let normalized = PantographModel::normalize_group_name(o);
+            let is_panto_part = normalized == "p_base" || normalized == "p1" || normalized == "p2" || normalized == "p3" || normalized == "p4";
+            let cur_is_panto_part = cur_group == "p_base" || cur_group == "p1" || cur_group == "p2" || cur_group == "p3" || cur_group == "p4";
+            if is_panto_part || !cur_is_panto_part {
+                cur_group = normalized;
+            }
+        } else if trimmed.starts_with("v ") {
+            v_idx += 1;
+            if cur_group == "p1" {
+                p1_v_indices.insert(v_idx);
+            } else if cur_group == "p4" {
+                p4_v_indices.insert(v_idx);
+            }
+        } else if trimmed.starts_with("f ") {
+            for token in trimmed[2..].split_whitespace() {
+                let sub = token.split('/').next().unwrap_or("");
+                if let Ok(idx) = sub.parse::<isize>() {
+                    let actual_idx = if idx > 0 {
+                        idx as usize
+                    } else if idx < 0 {
+                        (v_idx as isize + idx + 1) as usize
+                    } else {
+                        0
+                    };
+                    if actual_idx > 0 {
+                        if cur_group == "p1" {
+                            p1_v_indices.insert(actual_idx);
+                        } else if cur_group == "p4" {
+                            p4_v_indices.insert(actual_idx);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Rebuild lines with shifted vertices and remove existing pivot headers
+    let mut clean_lines: Vec<String> = Vec::new();
+    let mut v_counter = 0usize;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("# pivot ") || trimmed.starts_with("# PANTOGRAPH PIVOT DATA") {
+            continue;
+        }
+
+        if trimmed.starts_with("v ") {
+            v_counter += 1;
+            if let Some((ob, theta_orig, theta_new, scale)) = can_map_p4_obj {
+                if p4_v_indices.contains(&v_counter) {
+                    let parts: Vec<&str> = trimmed[2..].split_whitespace().collect();
+                    if parts.len() >= 3 {
+                        if let (Ok(x), Ok(y), Ok(z)) = (
+                            parts[0].parse::<f32>(),
+                            parts[1].parse::<f32>(),
+                            parts[2].parse::<f32>(),
+                        ) {
+                            let y_rel = y - ob.y;
+                            let z_rel = z - ob.z;
+
+                            let t_long = z_rel * theta_orig.cos() + y_rel * theta_orig.sin();
+                            let t_perp = -z_rel * theta_orig.sin() + y_rel * theta_orig.cos();
+
+                            let t_long_scaled = t_long * scale;
+
+                            let ny = p.p4_base.y + t_long_scaled * theta_new.sin() + t_perp * theta_new.cos();
+                            let nz = p.p4_base.z + t_long_scaled * theta_new.cos() - t_perp * theta_new.sin();
+                            let nx = p.p4_base.x + (x - ob.x);
+
+                            if parts.len() > 3 {
+                                clean_lines.push(format!("v {:.6} {:.6} {:.6} {}", nx, ny, nz, parts[3..].join(" ")));
+                            } else {
+                                clean_lines.push(format!("v {:.6} {:.6} {:.6}", nx, ny, nz));
+                            }
+                            continue;
+                        }
+                    }
+                }
+            } else if shift_p4_rigid && p4_v_indices.contains(&v_counter) {
+                let parts: Vec<&str> = trimmed[2..].split_whitespace().collect();
+                if parts.len() >= 3 {
+                    if let (Ok(x), Ok(y), Ok(z)) = (
+                        parts[0].parse::<f32>(),
+                        parts[1].parse::<f32>(),
+                        parts[2].parse::<f32>(),
+                    ) {
+                        let nx = x + delta_p4.x;
+                        let ny = y + delta_p4.y;
+                        let nz = z + delta_p4.z;
+                        if parts.len() > 3 {
+                            clean_lines.push(format!("v {:.6} {:.6} {:.6} {}", nx, ny, nz, parts[3..].join(" ")));
+                        } else {
+                            clean_lines.push(format!("v {:.6} {:.6} {:.6}", nx, ny, nz));
+                        }
+                        continue;
+                    }
+                }
+            } else if shift_p1 && p1_v_indices.contains(&v_counter) {
+                let parts: Vec<&str> = trimmed[2..].split_whitespace().collect();
+                if parts.len() >= 3 {
+                    if let (Ok(x), Ok(y), Ok(z)) = (
+                        parts[0].parse::<f32>(),
+                        parts[1].parse::<f32>(),
+                        parts[2].parse::<f32>(),
+                    ) {
+                        let nx = x + delta_p1.x;
+                        let ny = y + delta_p1.y;
+                        let nz = z + delta_p1.z;
+                        if parts.len() > 3 {
+                            clean_lines.push(format!("v {:.6} {:.6} {:.6} {}", nx, ny, nz, parts[3..].join(" ")));
+                        } else {
+                            clean_lines.push(format!("v {:.6} {:.6} {:.6}", nx, ny, nz));
+                        }
+                        continue;
+                    }
+                }
+            }
+        }
+
+        clean_lines.push(line.to_string());
+    }
+
+    let mut pivot_headers = Vec::new();
+    pivot_headers.push(format!("# pivot p1 {:.5} {:.5} {:.5}", p.base.x, p.base.y, p.base.z));
+    pivot_headers.push(format!("# pivot p2 {:.5} {:.5} {:.5}", p.elbow.x, p.elbow.y, p.elbow.z));
+    pivot_headers.push(format!("# pivot p3 {:.5} {:.5} {:.5}", p.tip.x, p.tip.y, p.tip.z));
+    if p.has_p4 {
+        pivot_headers.push(format!("# pivot p4 {:.5} {:.5} {:.5}", p.p4_base.x, p.p4_base.y, p.p4_base.z));
+        pivot_headers.push(format!("# pivot p4_elbow {:.5} {:.5} {:.5}", p.p4_elbow.x, p.p4_elbow.y, p.p4_elbow.z));
+    }
+
+    let mut target_idx = 0;
+    for (i, line) in clean_lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("mtllib ") || trimmed.starts_with("# Made in Blockbench") {
+            target_idx = i + 1;
+        }
+    }
+
+    clean_lines.insert(target_idx, "".to_string());
+    clean_lines.insert(target_idx + 1, "# PANTOGRAPH PIVOT DATA (auto-generated by EDPC)".to_string());
+    let mut offset = 2;
+    for h in pivot_headers {
+        clean_lines.insert(target_idx + offset, h);
+        offset += 1;
+    }
+    clean_lines.insert(target_idx + offset, "".to_string());
+
+    let mut result = clean_lines.join("\n");
+    if !result.ends_with('\n') {
+        result.push('\n');
+    }
+    Some(result)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn edpc_model_set_pivots(
+    handle: *mut EdpcModelHandle,
+    pivots: *const EdpcPivots,
+) -> bool {
+    if handle.is_null() || pivots.is_null() {
+        return false;
+    }
+
+    let h = &mut *handle;
+    let p = &*pivots;
+
+    h.model.pivots.base = p.base;
+    h.model.pivots.elbow = p.elbow;
+    h.model.pivots.tip = p.tip;
+    h.model.pivots.shoe_offset = p.shoe_offset;
+    if p.has_p4 {
+        h.model.pivots.p4_base = Some(p.p4_base);
+        h.model.pivots.p4_elbow = Some(p.p4_elbow);
+    } else {
+        h.model.pivots.p4_base = None;
+        h.model.pivots.p4_elbow = None;
+    }
+
+    h.solver = KinematicsSolver::new(&h.model.pivots);
+    h.cached_transformed_vertices.clear();
+
+    true
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn edpc_save_pivots_to_obj(
+    obj_path_ptr: *const c_char,
+    pivots: *const EdpcPivots,
+) -> bool {
+    if obj_path_ptr.is_null() || pivots.is_null() {
+        return false;
+    }
+
+    let c_str = CStr::from_ptr(obj_path_ptr);
+    let path_str = match c_str.to_str() {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+
+    let content = match std::fs::read_to_string(path_str) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    let p = &*pivots;
+    let new_content = match update_obj_pivots(&content, p) {
+        Some(s) => s,
+        None => return false,
+    };
+
+    std::fs::write(path_str, new_content).is_ok()
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn edpc_convert_or_fix_bbmodel(bbmodel_path_ptr: *const c_char) -> *mut c_char {
     if bbmodel_path_ptr.is_null() {
@@ -180,7 +462,8 @@ pub unsafe extern "C" fn edpc_model_get_transformed_pivots(
     let tip = h.model.pivots.tip;
 
     let a1 = angles.angle1;
-    let a4 = angles.angle4;
+    let a2 = angles.angle2;
+    let _a4 = angles.angle4;
 
     // p1 is base
     let p1 = base;
@@ -210,13 +493,16 @@ pub unsafe extern "C" fn edpc_model_get_transformed_pivots(
     };
 
     let (has_p4, p4_b, p4_e) = if let (Some(b4), Some(e4)) = (h.model.pivots.p4_base, h.model.pivots.p4_elbow) {
-        let dy4 = e4.y - b4.y;
-        let dz4 = e4.z - b4.z;
-        let p4_elbow_dyn = Vec3 {
-            x: 0.0,
-            y: b4.y + dy4 * a4.cos() - dz4 * a4.sin(),
-            z: b4.z + dy4 * a4.sin() + dz4 * a4.cos(),
-        };
+        let dy_cb = e4.y - elbow.y;
+        let dz_cb = e4.z - elbow.z;
+        let cy2 = elbow.y + dy_cb * a2.cos() - dz_cb * a2.sin();
+        let cz2 = elbow.z + dy_cb * a2.sin() + dz_cb * a2.cos();
+
+        let dy_ba = cy2 - base.y;
+        let dz_ba = cz2 - base.z;
+        let cy_world = base.y + dy_ba * a1.cos() - dz_ba * a1.sin();
+        let cz_world = base.z + dy_ba * a1.sin() + dz_ba * a1.cos();
+        let p4_elbow_dyn = Vec3 { x: 0.0, y: cy_world, z: cz_world };
         (true, Vec3 { x: 0.0, y: b4.y, z: b4.z }, p4_elbow_dyn)
     } else {
         (false, Vec3::default(), Vec3::default())
@@ -340,6 +626,49 @@ pub unsafe extern "C" fn edpc_generate_random_display_name(out_str: *mut *mut c_
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct CustomPivotsJson {
+    pub base_x: f32,
+    pub base_y: f32,
+    pub base_z: f32,
+    pub elbow_x: f32,
+    pub elbow_y: f32,
+    pub elbow_z: f32,
+    pub tip_x: f32,
+    pub tip_y: f32,
+    pub tip_z: f32,
+    #[serde(default)]
+    pub shoe_offset: f32,
+    #[serde(default)]
+    pub has_p4: bool,
+    #[serde(default)]
+    pub p4_base_x: f32,
+    #[serde(default)]
+    pub p4_base_y: f32,
+    #[serde(default)]
+    pub p4_base_z: f32,
+    #[serde(default)]
+    pub p4_elbow_x: f32,
+    #[serde(default)]
+    pub p4_elbow_y: f32,
+    #[serde(default)]
+    pub p4_elbow_z: f32,
+}
+
+impl CustomPivotsJson {
+    pub fn to_edpc_pivots(&self) -> EdpcPivots {
+        EdpcPivots {
+            base: Vec3::new(self.base_x, self.base_y, self.base_z),
+            elbow: Vec3::new(self.elbow_x, self.elbow_y, self.elbow_z),
+            tip: Vec3::new(self.tip_x, self.tip_y, self.tip_z),
+            shoe_offset: self.shoe_offset,
+            has_p4: self.has_p4,
+            p4_base: Vec3::new(self.p4_base_x, self.p4_base_y, self.p4_base_z),
+            p4_elbow: Vec3::new(self.p4_elbow_x, self.p4_elbow_y, self.p4_elbow_z),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct PantographRequestItem {
     pub id: String,
     pub random_id: String,
@@ -356,6 +685,8 @@ pub struct PantographRequestItem {
     pub depot_park_height: f32,
     pub upper_threshold: f32,
     pub lower_threshold: f32,
+    #[serde(default)]
+    pub custom_pivots: Option<CustomPivotsJson>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -390,6 +721,8 @@ struct PackageRequest {
     vehicles: Vec<pack_inspector::VehicleInfo>,
     #[serde(default)]
     pantographs: Vec<PantographRequestItem>,
+    #[serde(default)]
+    custom_pivots: Option<CustomPivotsJson>,
 }
 
 #[no_mangle]
@@ -455,6 +788,7 @@ pub unsafe extern "C" fn edpc_package_pack_json(
                 panto_mtl_path: p.panto_mtl_path,
                 panto_texture_path: p.panto_texture_path,
                 script_config: cfg,
+                custom_pivots: p.custom_pivots.as_ref().map(|cp| cp.to_edpc_pivots()),
             }
         })
         .collect();
@@ -468,6 +802,7 @@ pub unsafe extern "C" fn edpc_package_pack_json(
         custom_resources_rel_path: req.custom_resources_rel_path,
         script_config: script_cfg,
         pantographs: panto_package_items,
+        custom_pivots: req.custom_pivots.as_ref().map(|cp| cp.to_edpc_pivots()),
     };
 
     match packager::package_train_pack(&opts) {
@@ -739,4 +1074,142 @@ pub unsafe extern "C" fn edpc_free_bytes(ptr: *mut u8, len: u32) {
         drop(Box::from_raw(slice as *mut [u8]));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_update_obj_pivots_and_set_pivots() {
+        let sample_obj = r#"# Made in Blockbench
+mtllib sample.mtl
+
+# PANTOGRAPH PIVOT DATA (auto-generated by EDPC)
+# pivot p1 0.00000 0.18357 0.11706
+# pivot p2 0.00000 0.83591 -1.21875
+# pivot p3 0.00000 1.42328 0.08750
+
+g p_base
+v 0.0 0.0 0.0
+vn 0.0 1.0 0.0
+vt 0.0 0.0
+f 1/1/1 1/1/1 1/1/1
+"#;
+
+        let new_pivots = EdpcPivots {
+            base: Vec3::new(0.0, 0.20000, 0.15000),
+            elbow: Vec3::new(0.0, 0.85000, -1.20000),
+            tip: Vec3::new(0.0, 1.45000, 0.09000),
+            shoe_offset: 0.1048,
+            has_p4: true,
+            p4_base: Vec3::new(0.0, 0.22000, -0.30000),
+            p4_elbow: Vec3::new(0.0, 0.76000, -1.35000),
+        };
+
+        let updated = update_obj_pivots(sample_obj, &new_pivots).expect("Failed to update OBJ pivots");
+        assert!(updated.contains("# pivot p1 0.00000 0.20000 0.15000"));
+        assert!(updated.contains("# pivot p2 0.00000 0.85000 -1.20000"));
+        assert!(updated.contains("# pivot p3 0.00000 1.45000 0.09000"));
+        assert!(updated.contains("# pivot p4 0.00000 0.22000 -0.30000"));
+        assert!(updated.contains("# pivot p4_elbow 0.00000 0.76000 -1.35000"));
+        // Old pivots should not exist
+        assert!(!updated.contains("# pivot p1 0.00000 0.18357 0.11706"));
+
+        // Now test loading model and setting pivots
+        let c_obj = CString::new(updated).unwrap();
+        let handle = unsafe { edpc_model_load_string(c_obj.as_ptr()) };
+        assert!(!handle.is_null());
+
+        let mut read_pivots = EdpcPivots {
+            base: Vec3::default(),
+            elbow: Vec3::default(),
+            tip: Vec3::default(),
+            shoe_offset: 0.0,
+            has_p4: false,
+            p4_base: Vec3::default(),
+            p4_elbow: Vec3::default(),
+        };
+        unsafe {
+            assert!(edpc_model_get_pivots(handle, &mut read_pivots));
+            assert_eq!(read_pivots.base.y, 0.20000);
+            assert_eq!(read_pivots.elbow.y, 0.85000);
+            assert!(read_pivots.has_p4);
+
+            // Change pivots dynamically via edpc_model_set_pivots
+            let custom_pivots = EdpcPivots {
+                base: Vec3::new(0.0, 0.25000, 0.16000),
+                elbow: Vec3::new(0.0, 0.90000, -1.15000),
+                tip: Vec3::new(0.0, 1.50000, 0.10000),
+                shoe_offset: 0.1048,
+                has_p4: false,
+                p4_base: Vec3::default(),
+                p4_elbow: Vec3::default(),
+            };
+            assert!(edpc_model_set_pivots(handle, &custom_pivots));
+
+            let mut verify_pivots = EdpcPivots {
+                base: Vec3::default(),
+                elbow: Vec3::default(),
+                tip: Vec3::default(),
+                shoe_offset: 0.0,
+                has_p4: false,
+                p4_base: Vec3::default(),
+                p4_elbow: Vec3::default(),
+            };
+            assert!(edpc_model_get_pivots(handle, &mut verify_pivots));
+            assert_eq!(verify_pivots.base.y, 0.25000);
+            assert_eq!(verify_pivots.elbow.y, 0.90000);
+            assert!(!verify_pivots.has_p4);
+
+            edpc_model_free(handle);
+        }
+    }
+
+    #[test]
+    fn test_update_obj_pivots_shifts_p4_vertices() {
+        let sample_obj = r#"# Made in Blockbench
+mtllib sample.mtl
+
+# PANTOGRAPH PIVOT DATA (auto-generated by EDPC)
+# pivot p1 0.00000 0.20000 0.15000
+# pivot p2 0.00000 0.85000 -1.20000
+# pivot p3 0.00000 1.45000 0.09000
+# pivot p4 0.00000 0.44800 0.12340
+# pivot p4_elbow 0.00000 0.76000 -1.35000
+
+g p_base
+v 0.000000 0.000000 0.000000
+f 1/1/1 1/1/1 1/1/1
+
+g p4
+v 0.000000 0.448000 0.123400
+v 0.000000 0.760000 -1.350000
+f 2/1/1 3/1/1 2/1/1
+"#;
+
+        let new_pivots = EdpcPivots {
+            base: Vec3::new(0.0, 0.20000, 0.15000),
+            elbow: Vec3::new(0.0, 0.85000, -1.20000),
+            tip: Vec3::new(0.0, 1.45000, 0.09000),
+            shoe_offset: 0.1048,
+            has_p4: true,
+            p4_base: Vec3::new(0.0, 0.40000, 0.12340), // Lowered by -0.048 in Y
+            p4_elbow: Vec3::new(0.0, 0.76000, -1.35000), // Knee kept intact
+        };
+
+        let updated = update_obj_pivots(sample_obj, &new_pivots).expect("Failed to update OBJ pivots");
+        // Verify pivot header
+        assert!(updated.contains("# pivot p4 0.00000 0.40000 0.12340"));
+        assert!(updated.contains("# pivot p4_elbow 0.00000 0.76000 -1.35000"));
+
+        // Verify that p_base vertex is NOT changed
+        assert!(updated.contains("v 0.000000 0.000000 0.000000"));
+
+        // Verify that p4 lower hinge vertex moved down to match p4_base:
+        assert!(updated.contains("v 0.000000 0.400000 0.123400"));
+        // Verify that p4 upper hinge vertex stayed attached to p4_elbow:
+        assert!(updated.contains("v 0.000000 0.760000 -1.350000"));
+    }
+}
+
 

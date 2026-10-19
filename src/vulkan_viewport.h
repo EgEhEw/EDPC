@@ -45,6 +45,7 @@ public:
     const QImage& cachedTexture() const { return m_cachedTexture; }
     const QImage& cachedVehicleTexture() const { return m_cachedVehicleTexture; }
     bool getPivots(EdpcPivots* outPivots) const;
+    bool setPivots(const EdpcPivots& pivots);
     bool solveKinematics(float height, EdpcAngles* outAngles) const;
 
 signals:

@@ -893,6 +893,12 @@ void VulkanRenderer::updateUbo(const QMatrix4x4& projection, const QMatrix4x4& v
 void VulkanRenderer::startNextFrame() {
     VkCommandBuffer cb = m_window->currentCommandBuffer();
     const QSize sz = m_window->swapChainImageSize();
+    VkFramebuffer fb = m_window->currentFramebuffer();
+
+    if (cb == VK_NULL_HANDLE || fb == VK_NULL_HANDLE || sz.width() <= 0 || sz.height() <= 0) {
+        m_window->frameReady();
+        return;
+    }
 
     // Check if textures need upload
     {
@@ -979,7 +985,7 @@ void VulkanRenderer::startNextFrame() {
     VkRenderPassBeginInfo rpBeginInfo = {};
     rpBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     rpBeginInfo.renderPass = m_window->defaultRenderPass();
-    rpBeginInfo.framebuffer = m_window->currentFramebuffer();
+    rpBeginInfo.framebuffer = fb;
     rpBeginInfo.renderArea.extent.width = sz.width();
     rpBeginInfo.renderArea.extent.height = sz.height();
     rpBeginInfo.clearValueCount = multisampled ? 3 : 2;

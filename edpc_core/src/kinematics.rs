@@ -1,4 +1,4 @@
-use crate::obj_parser::{PantographModel, PantographPivots, Vertex};
+use crate::obj_parser::{PantographModel, PantographPivots, Vec3, Vertex};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct KinematicsAngles {
@@ -153,6 +153,56 @@ impl KinematicsSolver {
         let a2 = angles.angle2;
         let a4 = angles.angle4;
 
+        let delta_p1 = Vec3::new(
+            base.x - model.orig_pivots.base.x,
+            base.y - model.orig_pivots.base.y,
+            base.z - model.orig_pivots.base.z,
+        );
+
+        let p4_elbow = self.pivots.p4_elbow;
+        let orig_p4_base = model.orig_pivots.p4_base;
+        let orig_p4_elbow = model.orig_pivots.p4_elbow;
+
+        let delta_p4 = if let (Some(cur_b), Some(orig_b)) = (self.pivots.p4_base, orig_p4_base) {
+            Vec3::new(cur_b.x - orig_b.x, cur_b.y - orig_b.y, cur_b.z - orig_b.z)
+        } else {
+            Vec3::default()
+        };
+
+        // Compute world position of coupler elbow hinge on upper arm (p2)
+        let (cy_world, cz_world) = if let Some(p4_e) = p4_elbow {
+            let dy_cb = p4_e.y - elbow.y;
+            let dz_cb = p4_e.z - elbow.z;
+            let cy2 = elbow.y + dy_cb * a2.cos() - dz_cb * a2.sin();
+            let cz2 = elbow.z + dy_cb * a2.sin() + dz_cb * a2.cos();
+
+            let dy_ba = cy2 - base.y;
+            let dz_ba = cz2 - base.z;
+            (base.y + dy_ba * a1.cos() - dz_ba * a1.sin(), base.z + dy_ba * a1.sin() + dz_ba * a1.cos())
+        } else {
+            (p4_base.y, p4_base.z)
+        };
+
+        let (can_map_p4, orig_b, theta_orig, theta_world, scale, delta_theta) = if let (Some(ob), Some(oe)) = (orig_p4_base, orig_p4_elbow) {
+            let dy_orig = oe.y - ob.y;
+            let dz_orig = oe.z - ob.z;
+            let lo = dy_orig.hypot(dz_orig);
+
+            let dy_world = cy_world - p4_base.y;
+            let dz_world = cz_world - p4_base.z;
+            let lw = dy_world.hypot(dz_world);
+
+            if lo > 1e-4 && lw > 1e-4 {
+                let to = dy_orig.atan2(dz_orig);
+                let tw = dy_world.atan2(dz_world);
+                (true, ob, to, tw, lw / lo, tw - to)
+            } else {
+                (false, ob, 0.0, 0.0, 1.0, 0.0)
+            }
+        } else {
+            (false, p4_base, 0.0, 0.0, 1.0, 0.0)
+        };
+
         for (group_name, verts) in &model.parts {
             match group_name.as_str() {
                 "p_base" | "base" => {
@@ -160,10 +210,14 @@ impl KinematicsSolver {
                     out.extend_from_slice(verts);
                 }
                 "p1" => {
-                    // Lower arm: rotate around base by a1
+                    // Lower arm: offset by delta_p1, then rotate around base by a1
                     for v in verts {
                         let mut p = v.pos;
                         let mut n = v.normal;
+                        p.x += delta_p1.x;
+                        p.y += delta_p1.y;
+                        p.z += delta_p1.z;
+
                         p.y -= base.y; p.z -= base.z;
                         let py = p.y * a1.cos() - p.z * a1.sin();
                         let pz = p.y * a1.sin() + p.z * a1.cos();
@@ -233,18 +287,43 @@ impl KinematicsSolver {
                     }
                 }
                 "p4" => {
-                    // Coupler rod: rotate around p4_base by a4
+                    // Coupler rod: map between base and elbow hinges so both ends stay attached
                     for v in verts {
-                        let mut p = v.pos;
-                        let mut n = v.normal;
-                        p.y -= p4_base.y; p.z -= p4_base.z;
-                        let py = p.y * a4.cos() - p.z * a4.sin();
-                        let pz = p.y * a4.sin() + p.z * a4.cos();
-                        p.y = py + p4_base.y; p.z = pz + p4_base.z;
+                        let (p, n) = if can_map_p4 {
+                            let y_rel = v.pos.y - orig_b.y;
+                            let z_rel = v.pos.z - orig_b.z;
 
-                        let ny = n.y * a4.cos() - n.z * a4.sin();
-                        let nz = n.y * a4.sin() + n.z * a4.cos();
-                        n.y = ny; n.z = nz;
+                            let t_long = z_rel * theta_orig.cos() + y_rel * theta_orig.sin();
+                            let t_perp = -z_rel * theta_orig.sin() + y_rel * theta_orig.cos();
+
+                            let t_long_scaled = t_long * scale;
+
+                            let py = p4_base.y + t_long_scaled * theta_world.sin() + t_perp * theta_world.cos();
+                            let pz = p4_base.z + t_long_scaled * theta_world.cos() - t_perp * theta_world.sin();
+                            let px = p4_base.x + (v.pos.x - orig_b.x);
+
+                            let ny = v.normal.y * delta_theta.cos() - v.normal.z * delta_theta.sin();
+                            let nz = v.normal.y * delta_theta.sin() + v.normal.z * delta_theta.cos();
+
+                            (Vec3::new(px, py, pz), Vec3::new(v.normal.x, ny, nz))
+                        } else {
+                            let mut p = v.pos;
+                            let mut n = v.normal;
+                            p.x += delta_p4.x;
+                            p.y += delta_p4.y;
+                            p.z += delta_p4.z;
+
+                            p.y -= p4_base.y; p.z -= p4_base.z;
+                            let py = p.y * a4.cos() - p.z * a4.sin();
+                            let pz = p.y * a4.sin() + p.z * a4.cos();
+                            p.y = py + p4_base.y; p.z = pz + p4_base.z;
+
+                            let ny = n.y * a4.cos() - n.z * a4.sin();
+                            let nz = n.y * a4.sin() + n.z * a4.cos();
+                            n.y = ny; n.z = nz;
+
+                            (p, n)
+                        };
 
                         out.push(Vertex { pos: p, normal: n, uv: v.uv, part_id: 4 });
                     }

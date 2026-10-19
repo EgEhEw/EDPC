@@ -19,7 +19,7 @@
 #include <QtNetwork/qnetworkreply.h>
 #include <QtNetwork/qnetworkrequest.h>
 
-static const QString APP_VERSION = "v1.1.2";
+static const QString APP_VERSION = "v1.2.0";
 
 MainWindow::MainWindow(QVulkanInstance* vulkanInst, QWidget* parent)
     : QMainWindow(parent),
@@ -308,6 +308,11 @@ void MainWindow::setupUi() {
                     loadVehicleModelForPreview(m_vehicles[m_currentVehicleRow]);
                 }
                 updateVehicleViewportMesh();
+                QTimer::singleShot(50, this, [this]() {
+                    if (m_tabs && m_tabs->currentIndex() == 1) {
+                        updateVehicleViewportMesh();
+                    }
+                });
             }
         } else if (index == 2) {
             onRefreshScriptPreview();
@@ -360,8 +365,26 @@ void MainWindow::retranslateUi() {
         m_lblPivotsInfo->setText(isTr ? "Pivots: [Belirlenmedi]" : "Pivots: [Not loaded]");
     }
 
-    if (m_grpParams) m_grpParams->setTitle(isTr ? "2. Kataner ve Çalışma Parametreleri"
-                                                : "2. Catenary & Operating Parameters");
+    if (m_grpPivots) m_grpPivots->setTitle(isTr ? "2. Pantograf Pivot Konumları ve Rig Düzenleme"
+                                                : "2. Pantograph Pivot Positions & Rigging");
+    if (m_lblPivotHelp) {
+        m_lblPivotHelp->setText(isTr ? "Pivot eksenlerini metre cinsinden ayarlayın (Y: yükseklik, Z: boylamasına konum). Değişiklikler 3D kinematiği anlık günceller."
+                                     : "Adjust pivot axes in meters (Y: height, Z: longitudinal). Changes update 3D kinematics in real time.");
+    }
+    if (m_lblP1) m_lblP1->setText(isTr ? "● Taban (p1):" : "● Base (p1):");
+    if (m_lblP2) m_lblP2->setText(isTr ? "● Dirsek (p2):" : "● Elbow (p2):");
+    if (m_lblP3) m_lblP3->setText(isTr ? "● Başlık (p3):" : "● Head / Tip (p3):");
+    if (m_chkP4Enabled) m_chkP4Enabled->setText(isTr ? "4-Bar Bağlantı Çubuğunu Etkinleştir (p4)" : "Enable 4-Bar Coupler Pushrod (p4)");
+    if (m_lblP4) m_lblP4->setText(isTr ? "● İtme Çubuğu Taban (p4):" : "● Pushrod Base (p4):");
+    if (m_lblP4Elbow) m_lblP4Elbow->setText(isTr ? "● İtme Çubuğu Dirsek (p4_elbow):" : "● Pushrod Knee (p4_elbow):");
+    if (m_btnResetPivots) {
+        m_btnResetPivots->setText(isTr ? "🔄 Orijinal Değerlere Sıfırla" : "🔄 Reset to Original");
+        m_btnResetPivots->setToolTip(isTr ? "Pivot konumlarını modeldeki varsayılan değerlere sıfırla"
+                                          : "Reset pivot positions to default values from loaded model");
+    }
+
+    if (m_grpParams) m_grpParams->setTitle(isTr ? "3. Kataner ve Çalışma Parametreleri"
+                                                : "3. Catenary & Operating Parameters");
     if (m_lblWireRef) m_lblWireRef->setText(isTr ? "Referans Kataner Yüksekliği:" : "Reference Catenary Height:");
     if (m_btnTestWireRef) {
         m_btnTestWireRef->setText("👁 Test");
@@ -383,8 +406,8 @@ void MainWindow::retranslateUi() {
     if (m_lblUpperThresh) m_lblUpperThresh->setText(isTr ? "Üst Kataner Eşik Değeri (+Δ):" : "Upper Catenary Threshold (+Δ):");
     if (m_lblLowerThresh) m_lblLowerThresh->setText(isTr ? "Alt Kataner Eşik Değeri (-Δ):" : "Lower Catenary Threshold (-Δ):");
 
-    if (m_grpLive) m_grpLive->setTitle(isTr ? "3. Canlı Kinematik ve Etkileşimli Test"
-                                            : "3. Live Kinematics & Interactive Test");
+    if (m_grpLive) m_grpLive->setTitle(isTr ? "4. Canlı Kinematik ve Etkileşimli Test"
+                                            : "4. Live Kinematics & Interactive Test");
     if (m_lblTestHeight) m_lblTestHeight->setText(isTr ? "Simüle Kataner Yüksekliği:" : "Simulated Catenary Height:");
     if (m_chkShowWire) m_chkShowWire->setText(isTr ? "Referans Kataner Telini Göster" : "Show Reference Catenary Wire");
     if (m_chkShowPivots) m_chkShowPivots->setText(isTr ? "Pantograf Pivot Noktalarını Göster" : "Show Pantograph Pivot Markers");
@@ -555,8 +578,120 @@ QWidget* MainWindow::createTab1Pantograph() {
 
     leftLayout->addWidget(m_grpModel);
 
-    // --- Group 2: Parameters ---
-    m_grpParams = new QGroupBox("2. Catenary & Operating Parameters", leftPanel);
+    // --- Group 2: Pantograph Pivot Positions & Rigging ---
+    m_grpPivots = new QGroupBox("2. Pantograph Pivot Positions & Rigging", leftPanel);
+    QVBoxLayout* grpPivotsLayout = new QVBoxLayout(m_grpPivots);
+    grpPivotsLayout->setSpacing(6);
+
+    m_lblPivotHelp = new QLabel("Adjust pivot axes in meters (Y: height, Z: longitudinal). Changes update 3D kinematics in real time.", m_grpPivots);
+    m_lblPivotHelp->setWordWrap(true);
+    m_lblPivotHelp->setStyleSheet("color: #7f848e; font-size: 11px;");
+    grpPivotsLayout->addWidget(m_lblPivotHelp);
+
+    QGridLayout* pivotGrid = new QGridLayout();
+    pivotGrid->setHorizontalSpacing(8);
+    pivotGrid->setVerticalSpacing(4);
+
+    QLabel* hdrJoint = new QLabel("Joint / Pivot", m_grpPivots);
+    hdrJoint->setStyleSheet("font-weight: bold; color: #a0a8b7; font-size: 11px;");
+    QLabel* hdrY = new QLabel("Y (Height)", m_grpPivots);
+    hdrY->setStyleSheet("font-weight: bold; color: #a0a8b7; font-size: 11px;");
+    QLabel* hdrZ = new QLabel("Z (Forward/Back)", m_grpPivots);
+    hdrZ->setStyleSheet("font-weight: bold; color: #a0a8b7; font-size: 11px;");
+
+    pivotGrid->addWidget(hdrJoint, 0, 0);
+    pivotGrid->addWidget(hdrY, 0, 1);
+    pivotGrid->addWidget(hdrZ, 0, 2);
+
+    auto createSpin = [this](double val = 0.0) -> QDoubleSpinBox* {
+        auto* spin = new QDoubleSpinBox(m_grpPivots);
+        spin->setRange(-20.0, 20.0);
+        spin->setSingleStep(0.001);
+        spin->setDecimals(5);
+        spin->setValue(val);
+        spin->setSuffix(" m");
+        connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::onPivotSpinboxChanged);
+        return spin;
+    };
+
+    // p1 - Base (Cyan)
+    m_lblP1 = new QLabel("● Base (p1):", m_grpPivots);
+    m_lblP1->setStyleSheet("color: #00e5ff; font-weight: bold;");
+    m_lblP1->setToolTip("Pantograph lower hinge on roof (part_id 8 in 3D: Cyan)");
+    m_spinP1Y = createSpin(0.18357);
+    m_spinP1Z = createSpin(0.11706);
+    pivotGrid->addWidget(m_lblP1, 1, 0);
+    pivotGrid->addWidget(m_spinP1Y, 1, 1);
+    pivotGrid->addWidget(m_spinP1Z, 1, 2);
+
+    // p2 - Elbow (Orange)
+    m_lblP2 = new QLabel("● Elbow (p2):", m_grpPivots);
+    m_lblP2->setStyleSheet("color: #ff9800; font-weight: bold;");
+    m_lblP2->setToolTip("Knee/elbow joint between lower and upper arms (part_id 9 in 3D: Orange)");
+    m_spinP2Y = createSpin(0.83591);
+    m_spinP2Z = createSpin(-1.21875);
+    pivotGrid->addWidget(m_lblP2, 2, 0);
+    pivotGrid->addWidget(m_spinP2Y, 2, 1);
+    pivotGrid->addWidget(m_spinP2Z, 2, 2);
+
+    // p3 - Tip / Head (Green)
+    m_lblP3 = new QLabel("● Head / Tip (p3):", m_grpPivots);
+    m_lblP3->setStyleSheet("color: #00e676; font-weight: bold;");
+    m_lblP3->setToolTip("Top collector head hinge point (part_id 10 in 3D: Neon Green)");
+    m_spinP3Y = createSpin(1.42328);
+    m_spinP3Z = createSpin(0.08750);
+    pivotGrid->addWidget(m_lblP3, 3, 0);
+    pivotGrid->addWidget(m_spinP3Y, 3, 1);
+    pivotGrid->addWidget(m_spinP3Z, 3, 2);
+
+    // p4 - 4-Bar Coupler Checkbox
+    m_chkP4Enabled = new QCheckBox("Enable 4-Bar Coupler Pushrod (p4)", m_grpPivots);
+    m_chkP4Enabled->setStyleSheet("font-weight: bold; color: #e040fb;");
+    connect(m_chkP4Enabled, &QCheckBox::toggled, this, [this](bool checked) {
+        if (m_spinP4BaseY) m_spinP4BaseY->setEnabled(checked);
+        if (m_spinP4BaseZ) m_spinP4BaseZ->setEnabled(checked);
+        if (m_spinP4ElbowY) m_spinP4ElbowY->setEnabled(checked);
+        if (m_spinP4ElbowZ) m_spinP4ElbowZ->setEnabled(checked);
+        onPivotSpinboxChanged();
+    });
+    pivotGrid->addWidget(m_chkP4Enabled, 4, 0, 1, 3);
+
+    // p4 - Coupler Base (Magenta)
+    m_lblP4 = new QLabel("● Pushrod Base (p4):", m_grpPivots);
+    m_lblP4->setStyleSheet("color: #e040fb;");
+    m_lblP4->setToolTip("Lower hinge of parallel pushrod (part_id 11 in 3D: Magenta)");
+    m_spinP4BaseY = createSpin(0.21560);
+    m_spinP4BaseZ = createSpin(-0.32557);
+    pivotGrid->addWidget(m_lblP4, 5, 0);
+    pivotGrid->addWidget(m_spinP4BaseY, 5, 1);
+    pivotGrid->addWidget(m_spinP4BaseZ, 5, 2);
+
+    // p4_elbow - Coupler Elbow (Coral Pink)
+    m_lblP4Elbow = new QLabel("● Pushrod Knee (p4_elbow):", m_grpPivots);
+    m_lblP4Elbow->setStyleSheet("color: #ff6e40;");
+    m_lblP4Elbow->setToolTip("Upper hinge of parallel pushrod (part_id 12 in 3D: Coral Pink)");
+    m_spinP4ElbowY = createSpin(0.75445);
+    m_spinP4ElbowZ = createSpin(-1.37158);
+    pivotGrid->addWidget(m_lblP4Elbow, 6, 0);
+    pivotGrid->addWidget(m_spinP4ElbowY, 6, 1);
+    pivotGrid->addWidget(m_spinP4ElbowZ, 6, 2);
+
+    grpPivotsLayout->addLayout(pivotGrid);
+
+    // Action buttons: Reset
+    QHBoxLayout* pivotBtnRow = new QHBoxLayout();
+    m_btnResetPivots = new QPushButton("🔄 Reset to Original", m_grpPivots);
+    m_btnResetPivots->setToolTip("Reset pivot positions to default values from loaded model");
+    connect(m_btnResetPivots, &QPushButton::clicked, this, &MainWindow::onResetPivots);
+
+    pivotBtnRow->addWidget(m_btnResetPivots);
+    grpPivotsLayout->addLayout(pivotBtnRow);
+
+    m_grpPivots->setEnabled(false);
+    leftLayout->addWidget(m_grpPivots);
+
+    // --- Group 3: Parameters ---
+    m_grpParams = new QGroupBox("3. Catenary & Operating Parameters", leftPanel);
     QFormLayout* formParams = new QFormLayout(m_grpParams);
     formParams->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
     formParams->setSpacing(8);
@@ -637,8 +772,8 @@ QWidget* MainWindow::createTab1Pantograph() {
 
     leftLayout->addWidget(m_grpParams);
 
-    // --- Group 3: Live Interactive Testing ---
-    m_grpLive = new QGroupBox("3. Live Kinematics & Interactive Test", leftPanel);
+    // --- Group 4: Live Interactive Testing ---
+    m_grpLive = new QGroupBox("4. Live Kinematics & Interactive Test", leftPanel);
     QVBoxLayout* liveLayout = new QVBoxLayout(m_grpLive);
     liveLayout->setSpacing(8);
 
@@ -1229,10 +1364,14 @@ void MainWindow::onBrowseModel() {
             m_nominalTipHeight = 1.4480f;
             m_shoeOffset = pivots.shoe_offset > 0.001f ? pivots.shoe_offset : 0.1048f;
 
+            populatePivotSpinboxes(pivots);
+
             if (m_currentPantoIndex >= 0 && m_currentPantoIndex < m_pantographs.size()) {
                 auto& curPanto = m_pantographs[m_currentPantoIndex];
                 curPanto.nominalTipHeight = m_nominalTipHeight;
                 curPanto.shoeOffset = m_shoeOffset;
+                curPanto.customPivotsSet = false;
+                curPanto.customPivots = pivots;
             }
 
             m_spinWireRef->blockSignals(true);
@@ -1248,7 +1387,20 @@ void MainWindow::onBrowseModel() {
             m_sliderTestHeight->blockSignals(false);
 
             updateViewportKinematics();
-            updateVehicleViewportMesh();
+            if (m_tabs && m_tabs->currentIndex() == 1) {
+                updateVehicleViewportMesh();
+            }
+
+            QTimer::singleShot(0, this, [this]() {
+                if (m_viewport) {
+                    m_viewport->reapplyTextures();
+                    updateViewportKinematics();
+                    m_viewport->requestUpdate();
+                }
+                if (m_viewportContainer) {
+                    m_viewportContainer->update();
+                }
+            });
         }
     }
 }
@@ -1369,6 +1521,124 @@ void MainWindow::onKinematicsUpdated(float height, float angle1, float angle2, f
     } else {
         m_lblReachability->setText(isTr ? "Durum: ✖ Geometrik Sınır Dışı (Ulaşılamaz)" : "Status: ✖ Out of Geometric Limits (Unreachable)");
         m_lblReachability->setStyleSheet("font-weight: bold; color: #e06c75;");
+    }
+}
+
+void MainWindow::populatePivotSpinboxes(const EdpcPivots& p) {
+    m_syncingPivots = true;
+    if (m_spinP1Y) m_spinP1Y->setValue(p.base.y);
+    if (m_spinP1Z) m_spinP1Z->setValue(p.base.z);
+    if (m_spinP2Y) m_spinP2Y->setValue(p.elbow.y);
+    if (m_spinP2Z) m_spinP2Z->setValue(p.elbow.z);
+    if (m_spinP3Y) m_spinP3Y->setValue(p.tip.y);
+    if (m_spinP3Z) m_spinP3Z->setValue(p.tip.z);
+    if (m_chkP4Enabled) m_chkP4Enabled->setChecked(p.has_p4);
+    if (m_spinP4BaseY) {
+        m_spinP4BaseY->setValue(p.p4_base.y);
+        m_spinP4BaseY->setEnabled(p.has_p4);
+    }
+    if (m_spinP4BaseZ) {
+        m_spinP4BaseZ->setValue(p.p4_base.z);
+        m_spinP4BaseZ->setEnabled(p.has_p4);
+    }
+    if (m_spinP4ElbowY) {
+        m_spinP4ElbowY->setValue(p.p4_elbow.y);
+        m_spinP4ElbowY->setEnabled(p.has_p4);
+    }
+    if (m_spinP4ElbowZ) {
+        m_spinP4ElbowZ->setValue(p.p4_elbow.z);
+        m_spinP4ElbowZ->setEnabled(p.has_p4);
+    }
+    if (m_grpPivots) m_grpPivots->setEnabled(true);
+    m_syncingPivots = false;
+}
+
+void MainWindow::onPivotSpinboxChanged() {
+    if (m_syncingPivots || !m_viewport || !m_viewport->hasModel()) return;
+
+    EdpcPivots p;
+    std::memset(&p, 0, sizeof(p));
+    p.base.x = 0.0f;
+    p.base.y = static_cast<float>(m_spinP1Y ? m_spinP1Y->value() : 0.0);
+    p.base.z = static_cast<float>(m_spinP1Z ? m_spinP1Z->value() : 0.0);
+
+    p.elbow.x = 0.0f;
+    p.elbow.y = static_cast<float>(m_spinP2Y ? m_spinP2Y->value() : 0.0);
+    p.elbow.z = static_cast<float>(m_spinP2Z ? m_spinP2Z->value() : 0.0);
+
+    p.tip.x = 0.0f;
+    p.tip.y = static_cast<float>(m_spinP3Y ? m_spinP3Y->value() : 0.0);
+    p.tip.z = static_cast<float>(m_spinP3Z ? m_spinP3Z->value() : 0.0);
+
+    p.has_p4 = m_chkP4Enabled ? m_chkP4Enabled->isChecked() : false;
+    p.p4_base.x = 0.0f;
+    p.p4_base.y = static_cast<float>(m_spinP4BaseY ? m_spinP4BaseY->value() : 0.0);
+    p.p4_base.z = static_cast<float>(m_spinP4BaseZ ? m_spinP4BaseZ->value() : 0.0);
+
+    p.p4_elbow.x = 0.0f;
+    p.p4_elbow.y = static_cast<float>(m_spinP4ElbowY ? m_spinP4ElbowY->value() : 0.0);
+    p.p4_elbow.z = static_cast<float>(m_spinP4ElbowZ ? m_spinP4ElbowZ->value() : 0.0);
+
+    EdpcPivots curPivots;
+    if (m_viewport->getPivots(&curPivots)) {
+        p.shoe_offset = curPivots.shoe_offset;
+    } else {
+        p.shoe_offset = 0.1048f;
+    }
+
+    m_viewport->setPivots(p);
+    updateViewportKinematics();
+
+    if (m_currentPantoIndex >= 0 && m_currentPantoIndex < m_pantographs.size()) {
+        auto& curPanto = m_pantographs[m_currentPantoIndex];
+        curPanto.customPivotsSet = true;
+        curPanto.customPivots = p;
+        if (curPanto.modelHandle) {
+            edpc_model_set_pivots(curPanto.modelHandle, &p);
+        }
+        if (m_tabs && m_tabs->currentIndex() == 1) {
+            updateVehicleViewportMesh();
+        }
+    }
+
+    QString pivText = QString("Base: (0, %1, %2)\nElbow: (0, %3, %4)\nTip: (0, %5, %6)\nLink 4: %7")
+        .arg(p.base.y, 0, 'f', 3).arg(p.base.z, 0, 'f', 3)
+        .arg(p.elbow.y, 0, 'f', 3).arg(p.elbow.z, 0, 'f', 3)
+        .arg(p.tip.y, 0, 'f', 3).arg(p.tip.z, 0, 'f', 3)
+        .arg(p.has_p4 ? (m_currentLang == AppLanguage::Turkish ? "Var (4-Bar Bağlantılı)" : "Present (4-Bar Link)")
+                      : (m_currentLang == AppLanguage::Turkish ? "Yok (Doğrudan IK)" : "None (Direct IK)"));
+    if (m_lblPivotsInfo) {
+        m_lblPivotsInfo->setText(pivText);
+    }
+}
+
+void MainWindow::onResetPivots() {
+    if (m_objPath.isEmpty() || !QFile::exists(m_objPath)) return;
+
+    if (m_viewport) {
+        m_viewport->loadModel(m_objPath);
+        if (!m_texturePath.isEmpty() && QFile::exists(m_texturePath)) {
+            m_viewport->loadTexture(m_texturePath);
+        } else {
+            m_viewport->reapplyTextures();
+        }
+
+        EdpcPivots p;
+        if (m_viewport->getPivots(&p)) {
+            populatePivotSpinboxes(p);
+            if (m_currentPantoIndex >= 0 && m_currentPantoIndex < m_pantographs.size()) {
+                auto& curPanto = m_pantographs[m_currentPantoIndex];
+                curPanto.customPivotsSet = false;
+                curPanto.customPivots = p;
+                if (curPanto.modelHandle) {
+                    edpc_model_set_pivots(curPanto.modelHandle, &p);
+                }
+                if (m_tabs && m_tabs->currentIndex() == 1) {
+                    updateVehicleViewportMesh();
+                }
+            }
+            updateViewportKinematics();
+        }
     }
 }
 
@@ -1763,6 +2033,13 @@ void MainWindow::syncCurrentPantoUiToProfile() {
     if (m_spinDepotPark) p.depotPark = m_spinDepotPark->value();
     if (m_spinUpperThresh) p.upperThresh = m_spinUpperThresh->value();
     if (m_spinLowerThresh) p.lowerThresh = m_spinLowerThresh->value();
+
+    if (m_viewport && m_viewport->hasModel()) {
+        EdpcPivots piv;
+        if (m_viewport->getPivots(&piv)) {
+            p.customPivots = piv;
+        }
+    }
 }
 
 void MainWindow::loadPantoProfileToUi(int index) {
@@ -1834,8 +2111,24 @@ void MainWindow::loadPantoProfileToUi(int index) {
             if (!p.texturePath.isEmpty() && QFile::exists(p.texturePath)) {
                 m_viewport->loadTexture(p.texturePath);
             }
+            if (p.customPivotsSet) {
+                m_viewport->setPivots(p.customPivots);
+                populatePivotSpinboxes(p.customPivots);
+                if (p.modelHandle) {
+                    edpc_model_set_pivots(p.modelHandle, &p.customPivots);
+                }
+            } else {
+                EdpcPivots piv;
+                if (m_viewport->getPivots(&piv)) {
+                    populatePivotSpinboxes(piv);
+                    if (p.modelHandle) {
+                        edpc_model_set_pivots(p.modelHandle, &piv);
+                    }
+                }
+            }
         } else {
             m_viewport->loadModel("");
+            if (m_grpPivots) m_grpPivots->setEnabled(false);
             if (m_lblModelInfo) {
                 m_lblModelInfo->setText(isTr ? "Henüz model yüklenmedi. (Gereken parçalar: p_base, p1, p2, p3)"
                                              : "No model loaded yet. (Required parts: p_base, p1, p2, p3)");
@@ -2010,6 +2303,27 @@ QJsonObject MainWindow::buildPackageRequestJson() const {
         req["depot_park_height"] = p0.depotPark;
         req["upper_threshold"] = p0.upperThresh;
         req["lower_threshold"] = p0.lowerThresh;
+        if (p0.customPivotsSet) {
+            QJsonObject pivObj;
+            pivObj["base_x"] = p0.customPivots.base.x;
+            pivObj["base_y"] = p0.customPivots.base.y;
+            pivObj["base_z"] = p0.customPivots.base.z;
+            pivObj["elbow_x"] = p0.customPivots.elbow.x;
+            pivObj["elbow_y"] = p0.customPivots.elbow.y;
+            pivObj["elbow_z"] = p0.customPivots.elbow.z;
+            pivObj["tip_x"] = p0.customPivots.tip.x;
+            pivObj["tip_y"] = p0.customPivots.tip.y;
+            pivObj["tip_z"] = p0.customPivots.tip.z;
+            pivObj["shoe_offset"] = p0.customPivots.shoe_offset;
+            pivObj["has_p4"] = p0.customPivots.has_p4;
+            pivObj["p4_base_x"] = p0.customPivots.p4_base.x;
+            pivObj["p4_base_y"] = p0.customPivots.p4_base.y;
+            pivObj["p4_base_z"] = p0.customPivots.p4_base.z;
+            pivObj["p4_elbow_x"] = p0.customPivots.p4_elbow.x;
+            pivObj["p4_elbow_y"] = p0.customPivots.p4_elbow.y;
+            pivObj["p4_elbow_z"] = p0.customPivots.p4_elbow.z;
+            req["custom_pivots"] = pivObj;
+        }
     }
 
     // Pantographs array
@@ -2030,6 +2344,27 @@ QJsonObject MainWindow::buildPackageRequestJson() const {
         po["depot_park_height"] = p.depotPark;
         po["upper_threshold"] = p.upperThresh;
         po["lower_threshold"] = p.lowerThresh;
+        if (p.customPivotsSet) {
+            QJsonObject pivObj;
+            pivObj["base_x"] = p.customPivots.base.x;
+            pivObj["base_y"] = p.customPivots.base.y;
+            pivObj["base_z"] = p.customPivots.base.z;
+            pivObj["elbow_x"] = p.customPivots.elbow.x;
+            pivObj["elbow_y"] = p.customPivots.elbow.y;
+            pivObj["elbow_z"] = p.customPivots.elbow.z;
+            pivObj["tip_x"] = p.customPivots.tip.x;
+            pivObj["tip_y"] = p.customPivots.tip.y;
+            pivObj["tip_z"] = p.customPivots.tip.z;
+            pivObj["shoe_offset"] = p.customPivots.shoe_offset;
+            pivObj["has_p4"] = p.customPivots.has_p4;
+            pivObj["p4_base_x"] = p.customPivots.p4_base.x;
+            pivObj["p4_base_y"] = p.customPivots.p4_base.y;
+            pivObj["p4_base_z"] = p.customPivots.p4_base.z;
+            pivObj["p4_elbow_x"] = p.customPivots.p4_elbow.x;
+            pivObj["p4_elbow_y"] = p.customPivots.p4_elbow.y;
+            pivObj["p4_elbow_z"] = p.customPivots.p4_elbow.z;
+            po["custom_pivots"] = pivObj;
+        }
         pantoArr.append(po);
     }
     req["pantographs"] = pantoArr;
@@ -2371,6 +2706,7 @@ void MainWindow::loadVehicleModelForPreview(const VehicleMountItem& v) {
 
 void MainWindow::updateVehicleViewportMesh() {
     if (!m_vehicleViewport) return;
+    if (m_tabs && m_tabs->currentIndex() != 1) return;
 
     if (m_currentVehicleRow < 0 || m_currentVehicleRow >= m_vehicles.size()) {
         m_vehicleViewport->updateMeshData({});
@@ -2401,6 +2737,9 @@ void MainWindow::updateVehicleViewportMesh() {
     }
 
     if (handleToUse) {
+        if (panto.customPivotsSet) {
+            edpc_model_set_pivots(handleToUse, &panto.customPivots);
+        }
         double wireRef = panto.wireRef;
 
         const EdpcVertex* pantoVerts = nullptr;

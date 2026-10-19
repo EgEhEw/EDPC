@@ -16,6 +16,7 @@ pub struct PantographPackageItem {
     pub panto_mtl_path: Option<String>,
     pub panto_texture_path: Option<String>,
     pub script_config: ScriptConfig,
+    pub custom_pivots: Option<crate::EdpcPivots>,
 }
 
 pub struct PackageOptions {
@@ -27,6 +28,7 @@ pub struct PackageOptions {
     pub custom_resources_rel_path: String,
     pub script_config: ScriptConfig,
     pub pantographs: Vec<PantographPackageItem>,
+    pub custom_pivots: Option<crate::EdpcPivots>,
 }
 
 pub fn package_train_pack(opts: &PackageOptions) -> Result<String, String> {
@@ -63,46 +65,60 @@ struct PreparedPantoAsset {
     vehicle_ids: HashSet<String>,
 }
 
-fn prepare_panto_obj(obj_path: &str, mtl_name: Option<&str>) -> Result<Vec<u8>, String> {
+fn prepare_panto_obj(
+    obj_path: &str,
+    mtl_name: Option<&str>,
+    custom_pivots: Option<&crate::EdpcPivots>,
+) -> Result<Vec<u8>, String> {
     let raw_bytes = std::fs::read(obj_path)
         .map_err(|e| format!("Failed to read pantograph OBJ file: {}", e))?;
-    let Some(mtl) = mtl_name else {
-        return Ok(raw_bytes);
-    };
-    if let Ok(content) = String::from_utf8(raw_bytes.clone()) {
-        let mut lines = Vec::new();
-        let mut had_mtllib = false;
-        let mut had_usemtl = false;
-        for line in content.lines() {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with("usemtl ") {
-                had_usemtl = true;
-            }
-            if trimmed.starts_with("mtllib ") {
-                lines.push(format!("mtllib {}", mtl));
-                had_mtllib = true;
-            } else {
-                lines.push(line.to_string());
-            }
+
+    let content = if let Some(piv) = custom_pivots {
+        if let Ok(c) = String::from_utf8(raw_bytes.clone()) {
+            crate::update_obj_pivots(&c, piv).unwrap_or(c)
+        } else {
+            return Ok(raw_bytes);
         }
-        if !had_mtllib {
-            lines.insert(0, format!("mtllib {}", mtl));
-        }
-        if !had_usemtl {
-            let mut fixed_lines = Vec::with_capacity(lines.len() + 16);
-            for l in lines {
-                let is_g = l.trim_start().starts_with("g ");
-                fixed_lines.push(l);
-                if is_g {
-                    fixed_lines.push("usemtl panto".to_string());
-                }
-            }
-            return Ok(fixed_lines.join("\n").into_bytes());
-        }
-        Ok(lines.join("\n").into_bytes())
     } else {
-        Ok(raw_bytes)
+        match String::from_utf8(raw_bytes.clone()) {
+            Ok(c) => c,
+            Err(_) => return Ok(raw_bytes),
+        }
+    };
+
+    let Some(mtl) = mtl_name else {
+        return Ok(content.into_bytes());
+    };
+    let mut lines = Vec::new();
+    let mut had_mtllib = false;
+    let mut had_usemtl = false;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("usemtl ") {
+            had_usemtl = true;
+        }
+        if trimmed.starts_with("mtllib ") {
+            lines.push(format!("mtllib {}", mtl));
+            had_mtllib = true;
+        } else {
+            lines.push(line.to_string());
+        }
     }
+    if !had_mtllib {
+        lines.insert(0, format!("mtllib {}", mtl));
+    }
+    if !had_usemtl {
+        let mut fixed_lines = Vec::with_capacity(lines.len() + 16);
+        for l in lines {
+            let is_g = l.trim_start().starts_with("g ");
+            fixed_lines.push(l);
+            if is_g {
+                fixed_lines.push("usemtl panto".to_string());
+            }
+        }
+        return Ok(fixed_lines.join("\n").into_bytes());
+    }
+    Ok(lines.join("\n").into_bytes())
 }
 
 fn prepare_panto_mtl(mtl_path: &str, tex_name: Option<&str>, obj_bytes: Option<&[u8]>) -> Result<Vec<u8>, String> {
@@ -181,6 +197,7 @@ fn prepare_active_pantographs(opts: &PackageOptions) -> Result<Vec<PreparedPanto
             panto_mtl_path: opts.panto_mtl_path.clone(),
             panto_texture_path: opts.panto_texture_path.clone(),
             script_config: opts.script_config.clone(),
+            custom_pivots: opts.custom_pivots,
         }]
     };
 
@@ -249,7 +266,7 @@ fn prepare_active_pantographs(opts: &PackageOptions) -> Result<Vec<PreparedPanto
         } else {
             None
         };
-        let panto_obj_bytes = prepare_panto_obj(&p.panto_obj_path, mtl_ref)?;
+        let panto_obj_bytes = prepare_panto_obj(&p.panto_obj_path, mtl_ref, p.custom_pivots.as_ref())?;
 
         let (mtl_zip_path, mtl_bytes) = if let Some(ref mtl_path) = p.panto_mtl_path {
             if Path::new(mtl_path).exists() {
@@ -925,7 +942,7 @@ mod tests {
         let mtl_text = "newmtl custom_mat\nmap_Kd old.png\n";
         std::fs::write(&test_mtl_path, mtl_text).unwrap();
 
-        let obj_bytes = prepare_panto_obj(test_obj_path.to_str().unwrap(), Some("model123.mtl")).unwrap();
+        let obj_bytes = prepare_panto_obj(test_obj_path.to_str().unwrap(), Some("model123.mtl"), None).unwrap();
         let obj_str = String::from_utf8(obj_bytes.clone()).unwrap();
 
         assert!(obj_str.contains("mtllib model123.mtl"), "Should have updated mtllib");
@@ -937,5 +954,39 @@ mod tests {
         assert!(mtl_str.contains("newmtl panto"), "Should have defined newmtl panto");
         assert!(mtl_str.contains("map_Kd new_tex.png"), "Should have updated map_Kd to new_tex.png");
         assert!(mtl_str.contains("newmtl custom_mat"), "Should have kept custom_mat");
+    }
+
+    #[test]
+    fn test_prepare_panto_obj_with_custom_pivots() {
+        let temp_dir = std::env::temp_dir().join("edpc_test_packager_pivots");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let test_obj_path = temp_dir.join("panto_custom_test.obj");
+        let orig_text = "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\ng p_base\nf 1 2 3\n";
+        std::fs::write(&test_obj_path, orig_text).unwrap();
+
+        let custom = crate::EdpcPivots {
+            base: crate::obj_parser::Vec3::new(0.0, 0.25, -0.40),
+            elbow: crate::obj_parser::Vec3::new(0.0, 0.85, 0.20),
+            tip: crate::obj_parser::Vec3::new(0.0, 1.45, -0.10),
+            shoe_offset: 0.1048,
+            has_p4: true,
+            p4_base: crate::obj_parser::Vec3::new(0.0, 0.30, -0.35),
+            p4_elbow: crate::obj_parser::Vec3::new(0.0, 0.75, 0.15),
+        };
+
+        let obj_bytes = prepare_panto_obj(test_obj_path.to_str().unwrap(), Some("model123.mtl"), Some(&custom)).unwrap();
+        let obj_str = String::from_utf8(obj_bytes).unwrap();
+
+        assert!(obj_str.contains("# pivot p1 0.00000 0.25000 -0.40000"), "Should contain custom p1");
+        assert!(obj_str.contains("# pivot p2 0.00000 0.85000 0.20000"), "Should contain custom p2");
+        assert!(obj_str.contains("# pivot p3 0.00000 1.45000 -0.10000"), "Should contain custom p3");
+        assert!(obj_str.contains("# pivot p4 0.00000 0.30000 -0.35000"), "Should contain custom p4 base");
+        assert!(obj_str.contains("# pivot p4_elbow 0.00000 0.75000 0.15000"), "Should contain custom p4 elbow");
+        assert!(obj_str.contains("mtllib model123.mtl"), "Should contain mtllib");
+
+        // Verify original file on disk was NOT modified
+        let disk_text = std::fs::read_to_string(&test_obj_path).unwrap();
+        assert_eq!(disk_text, orig_text, "Disk file must remain untouched!");
     }
 }

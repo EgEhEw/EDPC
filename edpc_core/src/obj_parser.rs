@@ -58,6 +58,7 @@ pub struct PantographModel {
     pub vertices: Vec<Vertex>,
     pub parts: HashMap<String, Vec<Vertex>>,
     pub pivots: PantographPivots,
+    pub orig_pivots: PantographPivots,
     pub raw_obj_text: String,
     pub mtl_filename: Option<String>,
 }
@@ -273,10 +274,12 @@ impl PantographModel {
             all_vertices.extend_from_slice(verts);
         }
 
+        let orig_pivots = pivots.clone();
         Ok(Self {
             vertices: all_vertices,
             parts: part_vertices,
             pivots,
+            orig_pivots,
             raw_obj_text: obj_text.to_string(),
             mtl_filename,
         })
