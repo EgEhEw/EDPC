@@ -10,6 +10,13 @@
 #include <QtWidgets/qheaderview.h>
 #include <QtWidgets/qsplitter.h>
 #include <QtWidgets/qscrollarea.h>
+#include <QtWidgets/qtabbar.h>
+#include <QtWidgets/qbuttongroup.h>
+#include <QtWidgets/qstylefactory.h>
+#include <QtWidgets/qapplication.h>
+#include <QtGui/qpainter.h>
+#include <QtGui/qshortcut.h>
+#include <QtGui/qfontdatabase.h>
 #include <QtGui/qdesktopservices.h>
 #include <QtCore/qfileinfo.h>
 #include <QtCore/qdir.h>
@@ -19,7 +26,7 @@
 #include <QtNetwork/qnetworkreply.h>
 #include <QtNetwork/qnetworkrequest.h>
 
-static const QString APP_VERSION = "v1.2.0";
+static const QString APP_VERSION = "v1.3.0";
 
 MainWindow::MainWindow(QVulkanInstance* vulkanInst, QWidget* parent)
     : QMainWindow(parent),
@@ -51,8 +58,8 @@ MainWindow::MainWindow(QVulkanInstance* vulkanInst, QWidget* parent)
       m_netManager(nullptr) {
 
     setWindowTitle("EDPC - EgEhE's Dynamic Pantograph Configurator");
-    resize(1440, 880);
-    setMinimumSize(1080, 700);
+    resize(1480, 920);
+    setMinimumSize(1100, 720);
 
     // Initialize default pantograph profile #1
     PantographProfile p0 = createNewPantographProfile(0);
@@ -76,250 +83,245 @@ MainWindow::~MainWindow() {
     }
 }
 
+// The empty canvas is drawn locally so it stays sharp at every display scale.
+namespace {
+class PantographEmblem : public QWidget {
+public:
+    explicit PantographEmblem(QWidget* parent = nullptr) : QWidget(parent) {
+        setFixedSize(160, 82);
+    }
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.scale(0.8, 0.66);
+        p.setPen(QPen(QColor("#303338"), 1));
+        for (int x = 12; x < 200; x += 22)
+            for (int y = 6; y < 124; y += 22) p.drawPoint(x, y);
+        p.setPen(QPen(QColor("#55585f"), 2));
+        p.drawLine(14, 106, 186, 106);
+        p.drawLine(20, 15, 180, 15);
+        p.setPen(QPen(QColor("#eea66b"), 3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.drawPolyline(QPolygonF{QPointF(125, 100), QPointF(58, 60), QPointF(120, 22)});
+        p.drawLine(102, 100, 48, 60);
+        p.drawLine(48, 60, 110, 22);
+        p.drawLine(89, 22, 145, 22);
+        p.drawLine(95, 100, 140, 100);
+        p.setBrush(QColor("#191b1f"));
+        for (const QPointF pt : {QPointF(125, 100), QPointF(58, 60), QPointF(120, 22)})
+            p.drawEllipse(pt, 4, 4);
+    }
+};
+}
+
 void MainWindow::applyDarkTheme() {
-    // Modern sleek dark theme
-    setStyleSheet(
-        "QMainWindow, QWidget {"
-        "    background-color: #1a1b20;"
-        "    color: #e0e0e0;"
-        "    font-family: 'Segoe UI', 'Ubuntu', 'DejaVu Sans', sans-serif;"
-        "    font-size: 13px;"
-        "}"
-        "QTabWidget::pane {"
-        "    border: 1px solid #2d3139;"
-        "    background-color: #1e2026;"
-        "    top: -1px;"
-        "}"
-        "QTabBar::tab {"
-        "    background: #141518;"
-        "    border: 1px solid #2d3139;"
-        "    border-bottom: none;"
-        "    padding: 10px 24px;"
-        "    margin-right: 2px;"
-        "    font-weight: bold;"
-        "    color: #8f96a3;"
-        "    border-top-left-radius: 4px;"
-        "    border-top-right-radius: 4px;"
-        "}"
-        "QTabBar::tab:selected {"
-        "    background: #1e2026;"
-        "    color: #00adb5;"
-        "    border-bottom: 2px solid #00adb5;"
-        "}"
-        "QTabBar::tab:hover:!selected {"
-        "    background: #23262d;"
-        "    color: #ffffff;"
-        "}"
-        "QGroupBox {"
-        "    font-weight: bold;"
-        "    border: 1px solid #2d3139;"
-        "    border-radius: 6px;"
-        "    margin-top: 14px;"
-        "    padding-top: 14px;"
-        "    background-color: #21232b;"
-        "}"
-        "QGroupBox::title {"
-        "    subcontrol-origin: margin;"
-        "    subcontrol-position: top left;"
-        "    left: 12px;"
-        "    padding: 0 6px;"
-        "    color: #00adb5;"
-        "}"
-        "QPushButton {"
-        "    background-color: #2b303c;"
-        "    border: 1px solid #3b4252;"
-        "    border-radius: 4px;"
-        "    padding: 7px 16px;"
-        "    font-weight: 600;"
-        "    color: #eceff4;"
-        "}"
-        "QPushButton:hover {"
-        "    background-color: #3b4252;"
-        "    border-color: #00adb5;"
-        "}"
-        "QPushButton:pressed {"
-        "    background-color: #00adb5;"
-        "    color: #1a1b20;"
-        "}"
-        "QPushButton:disabled {"
-        "    background-color: #1f2228;"
-        "    border-color: #2a2e36;"
-        "    color: #555b66;"
-        "}"
-        "QPushButton#actionButton {"
-        "    background-color: #00adb5;"
-        "    color: #111215;"
-        "    font-size: 14px;"
-        "    font-weight: bold;"
-        "    padding: 10px 20px;"
-        "}"
-        "QPushButton#actionButton:hover {"
-        "    background-color: #02c4cd;"
-        "}"
-        "QLineEdit, QDoubleSpinBox, QComboBox {"
-        "    background-color: #16171b;"
-        "    border: 1px solid #323640;"
-        "    border-radius: 4px;"
-        "    padding: 5px 8px;"
-        "    color: #f0f0f0;"
-        "}"
-        "QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus {"
-        "    border: 1px solid #00adb5;"
-        "}"
-        "QTableWidget {"
-        "    background-color: #16171b;"
-        "    alternate-background-color: #1c1e24;"
-        "    gridline-color: #262932;"
-        "    border: 1px solid #2d3139;"
-        "    border-radius: 4px;"
-        "    selection-background-color: #00adb5;"
-        "    selection-color: #111215;"
-        "}"
-        "QHeaderView::section {"
-        "    background-color: #21232b;"
-        "    color: #8f96a3;"
-        "    font-weight: bold;"
-        "    padding: 6px;"
-        "    border: 1px solid #2d3139;"
-        "}"
-        "QSlider::groove:horizontal {"
-        "    border: 1px solid #2d3139;"
-        "    height: 8px;"
-        "    background: #141518;"
-        "    border-radius: 4px;"
-        "}"
-        "QSlider::sub-page:horizontal {"
-        "    background: #00adb5;"
-        "    border-radius: 4px;"
-        "}"
-        "QSlider::handle:horizontal {"
-        "    background: #ffffff;"
-        "    border: 1px solid #00adb5;"
-        "    width: 18px;"
-        "    margin-top: -6px;"
-        "    margin-bottom: -6px;"
-        "    border-radius: 9px;"
-        "}"
-        "QSlider::handle:horizontal:hover {"
-        "    background: #00adb5;"
-        "}"
-        "QCheckBox {"
-        "    spacing: 8px;"
-        "    font-weight: 500;"
-        "}"
-        "QCheckBox::indicator {"
-        "    width: 18px;"
-        "    height: 18px;"
-        "    border: 1px solid #3b4252;"
-        "    border-radius: 3px;"
-        "    background: #16171b;"
-        "}"
-        "QCheckBox::indicator:checked {"
-        "    background: #00adb5;"
-        "    border-color: #00adb5;"
-        "}"
-        "QPlainTextEdit {"
-        "    background-color: #131417;"
-        "    color: #e5c07b;"
-        "    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;"
-        "    font-size: 12px;"
-        "    border: 1px solid #2d3139;"
-        "    border-radius: 4px;"
-        "    padding: 8px;"
-        "}"
-    );
+    QApplication::setStyle(QStyleFactory::create("Fusion"));
+    QFont font = QApplication::font();
+    const auto families = QFontDatabase::families();
+    for (const QString& family : {QString("Inter"), QString("Segoe UI"), QString("Noto Sans")}) {
+        if (families.contains(family)) { font.setFamily(family); break; }
+    }
+    font.setPixelSize(12);
+    qApp->setFont(font);
+    QPalette palette;
+    palette.setColor(QPalette::Window, QColor("#191b1f"));
+    palette.setColor(QPalette::WindowText, QColor("#e7e7e9"));
+    palette.setColor(QPalette::Base, QColor("#17191c"));
+    palette.setColor(QPalette::AlternateBase, QColor("#202226"));
+    palette.setColor(QPalette::Text, QColor("#e7e7e9"));
+    palette.setColor(QPalette::Button, QColor("#292c31"));
+    palette.setColor(QPalette::ButtonText, QColor("#e7e7e9"));
+    palette.setColor(QPalette::Highlight, QColor("#bc8052"));
+    palette.setColor(QPalette::HighlightedText, QColor("#ffffff"));
+    palette.setColor(QPalette::Disabled, QPalette::Text, QColor("#747880"));
+    palette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#747880"));
+    qApp->setPalette(palette);
+    setStyleSheet(R"(
+        QWidget { color: #dedfe2; font-size: 12px; }
+        QMainWindow, QWidget#workspaceRoot { background: #191b1f; }
+        QLabel { background: transparent; }
+        QWidget#navigation { background: #141619; border-right: 1px solid #2c2f34; }
+        QLabel#brand { font-size: 27px; font-weight: 800; color: #f3f0eb; letter-spacing: 3px; }
+        QLabel#eyebrow { color: #858990; font-size: 10px; font-weight: 600; letter-spacing: 2px; }
+        QLabel#pageTitle { font-size: 24px; font-weight: 600; color: #f0f0f1; }
+        QLabel#muted { color: #969aa3; }
+        QLabel#step { color: #eea66b; font-size: 11px; font-weight: 600; }
+        QLabel#emptyTitle { font-size: 18px; font-weight: 600; color: #ececef; }
+        QWidget#canvasEmpty { background: #17191c; border: 1px solid #303339; border-radius: 8px; }
+        QTabWidget::pane { border: 0; background: transparent; }
+        QTabBar::tab { padding: 10px 15px; color: #979ba4; border-bottom: 2px solid #303339; }
+        QTabBar::tab:selected { color: #f0bc91; border-bottom-color: #eea66b; }
+        QTabBar::tab:hover { color: #eeeeef; background: #24272c; }
+        QPushButton { background: #292c31; border: 1px solid #3a3e45; border-radius: 5px; padding: 7px 12px; font-weight: 500; }
+        QPushButton:hover { background: #34383e; border-color: #747880; }
+        QPushButton:pressed { background: #202226; }
+        QPushButton:focus { border-color: #eea66b; }
+        QPushButton:disabled { color: #747880; background: #23252a; border-color: #303339; }
+        QPushButton#navButton { text-align: left; background: transparent; border: 1px solid transparent; padding: 14px 12px; color: #969aa3; font-size: 12px; }
+        QPushButton#navButton:hover { background: #202226; color: #e9eaec; }
+        QPushButton#navButton:checked { background: #30271f; border-color: #584232; color: #f0bc91; }
+        QPushButton#actionButton { color: #211b17; background: #eea66b; border-color: #eea66b; font-weight: 600; padding: 10px 16px; }
+        QPushButton#actionButton:hover { background: #f6ba89; border-color: #f6ba89; }
+        QPushButton#actionButton:disabled { background: #39312a; color: #a18b79; border-color: #493b30; }
+        QPushButton#quietButton { color: #a2a6ae; background: transparent; border-color: transparent; font-size: 11px; padding: 4px 8px; }
+        QPushButton#quietButton:hover { color: #f0bc91; background: #292c31; }
+        QGroupBox { background: #202226; border: 1px solid #33363c; border-radius: 7px; margin-top: 12px; padding: 17px 10px 10px; font-weight: 600; }
+        QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 12px; padding: 0 5px; color: #d8d9dd; }
+        QGroupBox:disabled { color: #777b83; border-color: #2c2f34; }
+        QLineEdit, QDoubleSpinBox, QComboBox { background: #17191c; border: 1px solid #3b3f46; border-radius: 4px; padding: 7px 8px; selection-background-color: #775339; min-height: 16px; }
+        QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus { border-color: #eea66b; }
+        QLineEdit:disabled, QDoubleSpinBox:disabled, QComboBox:disabled { color: #777b83; background: #1c1e22; border-color: #303339; }
+        QComboBox::drop-down { border: 0; width: 24px; }
+        QComboBox QAbstractItemView { background: #24272c; border: 1px solid #484c54; selection-background-color: #514030; }
+        QDoubleSpinBox { font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 11px; }
+        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { width: 17px; border-left: 1px solid #33363c; }
+        QTableWidget { background: #17191c; alternate-background-color: #202226; gridline-color: #303339; border: 1px solid #33363c; border-radius: 4px; selection-background-color: #514030; selection-color: #fff0e3; }
+        QHeaderView::section { background: #292c31; color: #a5a9b1; border: 0; border-bottom: 1px solid #3b3f46; padding: 9px 7px; font-size: 11px; }
+        QTableWidget::item { padding: 5px; }
+        QSlider::groove:horizontal { height: 4px; background: #363a41; border-radius: 2px; }
+        QSlider::sub-page:horizontal { background: #eea66b; border-radius: 2px; }
+        QSlider::handle:horizontal { width: 12px; margin: -5px 0; border-radius: 6px; background: #f2c6a4; border: 1px solid #eea66b; }
+        QCheckBox { spacing: 7px; font-weight: 400; }
+        QCheckBox::indicator { width: 15px; height: 15px; }
+        QPlainTextEdit { background: #141619; color: #d6c3a8; font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 12px; border: 1px solid #33363c; border-radius: 5px; padding: 12px; selection-background-color: #514030; }
+        QScrollArea { background: transparent; border: 0; }
+        QScrollBar:vertical { background: transparent; width: 7px; margin: 0; }
+        QScrollBar::handle:vertical { background: #454950; border-radius: 3px; min-height: 32px; }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+        QSplitter::handle { background: #303339; width: 1px; height: 1px; }
+        QToolTip { color: #eeeef0; background: #292c31; border: 1px solid #555a63; padding: 6px; }
+    )");
 }
 
 void MainWindow::setupUi() {
-    QWidget* centralWidget = new QWidget(this);
-    setCentralWidget(centralWidget);
+    auto* central = new QWidget(this);
+    central->setObjectName("workspaceRoot");
+    setCentralWidget(central);
+    auto* shell = new QHBoxLayout(central);
+    shell->setContentsMargins(0, 0, 0, 0);
+    shell->setSpacing(0);
 
-    QVBoxLayout* rootLayout = new QVBoxLayout(centralWidget);
-    rootLayout->setContentsMargins(12, 10, 12, 12);
-    rootLayout->setSpacing(8);
-
-    // Top Header Bar with branding & language selector
-    QWidget* topBar = new QWidget(centralWidget);
-    QHBoxLayout* topBarLayout = new QHBoxLayout(topBar);
-    topBarLayout->setContentsMargins(4, 2, 4, 4);
-
-    QLabel* appLogo = new QLabel("⚡ EDPC", topBar);
-    appLogo->setStyleSheet("font-weight: 800; font-size: 16px; color: #00adb5;");
-    QLabel* appDesc = new QLabel("— Dynamic Pantograph Configurator for Minecraft MTR", topBar);
-    appDesc->setStyleSheet("font-size: 12px; color: #8f96a3;");
-
-    topBarLayout->addWidget(appLogo);
-    topBarLayout->addWidget(appDesc);
-    topBarLayout->addStretch();
-
-    QLabel* langLabel = new QLabel("🌐 Language / Dil:", topBar);
-    langLabel->setStyleSheet("font-weight: 600; font-size: 12px; color: #abb2bf; margin-right: 4px;");
-    topBarLayout->addWidget(langLabel);
-
-    m_comboLang = new QComboBox(topBar);
-    m_comboLang->addItem("English (EN)");
-    m_comboLang->addItem("Türkçe (TR)");
-    m_comboLang->setCurrentIndex(0); // Default to English automatically
-    m_comboLang->setFixedWidth(130);
+    auto* rail = new QWidget(central);
+    rail->setObjectName("navigation");
+    rail->setFixedWidth(194);
+    auto* railLayout = new QVBoxLayout(rail);
+    railLayout->setContentsMargins(18, 26, 18, 16);
+    railLayout->setSpacing(10);
+    auto* brand = new QLabel("EDPC", rail);
+    brand->setObjectName("brand");
+    railLayout->addWidget(brand);
+    railLayout->addSpacing(36);
+    m_stepLabel = new QLabel(rail);
+    m_stepLabel->setObjectName("eyebrow");
+    railLayout->addWidget(m_stepLabel);
+    auto* navGroup = new QButtonGroup(this);
+    for (int i = 0; i < 3; ++i) {
+        auto* button = new QPushButton(rail);
+        button->setObjectName("navButton");
+        button->setCheckable(true);
+        button->setMinimumHeight(66);
+        navGroup->addButton(button, i);
+        m_navButtons[i] = button;
+        railLayout->addWidget(button);
+        connect(button, &QPushButton::clicked, this, [this, i]() { m_tabs->setCurrentIndex(i); });
+        auto* shortcut = new QShortcut(QKeySequence(QString("Alt+%1").arg(i + 1)), this);
+        connect(shortcut, &QShortcut::activated, button, &QPushButton::click);
+    }
+    m_navButtons[0]->setChecked(true);
+    railLayout->addStretch();
+    auto* compatibility = new QLabel("MINECRAFT TRANSIT RAILWAY\nMTR / EgEhELib", rail);
+    compatibility->setStyleSheet("color: #858990; font-size: 9px; line-height: 150%;");
+    railLayout->addWidget(compatibility);
+    railLayout->addSpacing(12);
+    m_comboLang = new QComboBox(rail);
+    m_comboLang->addItems({"English", "Türkçe"});
+    m_comboLang->setAccessibleName("Language / Dil");
     connect(m_comboLang, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onLanguageChanged);
-    topBarLayout->addWidget(m_comboLang);
+    railLayout->addWidget(m_comboLang);
+    shell->addWidget(rail);
 
-    rootLayout->addWidget(topBar);
+    auto* content = new QWidget(central);
+    auto* root = new QVBoxLayout(content);
+    root->setContentsMargins(24, 24, 24, 10);
+    root->setSpacing(16);
+    auto* header = new QHBoxLayout();
+    auto* titles = new QVBoxLayout();
+    titles->setSpacing(5);
+    m_workspaceTitle = new QLabel(content);
+    m_workspaceTitle->setObjectName("pageTitle");
+    m_workspaceHint = new QLabel(content);
+    m_workspaceHint->setObjectName("muted");
+    m_workspaceHint->setWordWrap(true);
+    titles->addWidget(m_workspaceTitle);
+    titles->addWidget(m_workspaceHint);
+    header->addLayout(titles, 1);
+    auto* version = new QLabel(APP_VERSION, content);
+    version->setObjectName("step");
+    header->addWidget(version, 0, Qt::AlignTop);
+    root->addLayout(header);
 
-    m_tabs = new QTabWidget(this);
-    m_tabs->addTab(createTab1Pantograph(), "1. Pantograph 3D View & Settings");
-    m_tabs->addTab(createTab2TrainPack(), "2. Train Pack & Vehicle Mount Settings");
-    m_tabs->addTab(createTab3Export(), "3. Export & Packaging");
+    m_tabs = new QTabWidget(content);
+    m_tabs->setObjectName("workflowPages");
+    m_tabs->addTab(createTab1Pantograph(), "Pantograph");
+    m_tabs->addTab(createTab2TrainPack(), "Train pack");
+    m_tabs->addTab(createTab3Export(), "Export");
+    m_tabs->tabBar()->hide();
+    root->addWidget(m_tabs, 1);
 
-    rootLayout->addWidget(m_tabs);
-
-    // Bottom status bar with always-visible version badge and update checker
-    m_bottomBarWidget = new QWidget(centralWidget);
-    QHBoxLayout* bottomBarLayout = new QHBoxLayout(m_bottomBarWidget);
-    bottomBarLayout->setContentsMargins(4, 2, 4, 2);
-    bottomBarLayout->setSpacing(8);
-
-    m_btnCheckUpdate = new QPushButton("🔄 Check for Updates", m_bottomBarWidget);
-    m_btnCheckUpdate->setStyleSheet(
-        "QPushButton { font-size: 11px; padding: 3px 10px; background-color: #21232b; border: 1px solid #2d3139; border-radius: 4px; color: #8f96a3; }"
-        "QPushButton:hover { background-color: #2b303c; color: #00adb5; border-color: #00adb5; }"
-    );
+    m_bottomBarWidget = new QWidget(content);
+    auto* bottom = new QHBoxLayout(m_bottomBarWidget);
+    bottom->setContentsMargins(0, 6, 0, 0);
+    m_sessionStatus = new QLabel(m_bottomBarWidget);
+    m_sessionStatus->setObjectName("muted");
+    bottom->addWidget(m_sessionStatus);
+    bottom->addStretch();
+    m_btnCheckUpdate = new QPushButton(m_bottomBarWidget);
+    m_btnCheckUpdate->setObjectName("quietButton");
     connect(m_btnCheckUpdate, &QPushButton::clicked, this, &MainWindow::onCheckForUpdates);
-
-    m_lblVersionBadge = new QLabel(APP_VERSION, m_bottomBarWidget);
-    m_lblVersionBadge->setStyleSheet("color: #00adb5; font-weight: bold; font-size: 12px; padding: 2px 8px; background: #16171b; border: 1px solid #2d3139; border-radius: 4px;");
-
-    bottomBarLayout->addStretch();
-    bottomBarLayout->addWidget(m_btnCheckUpdate);
-    bottomBarLayout->addWidget(m_lblVersionBadge);
-
-    rootLayout->addWidget(m_bottomBarWidget);
+    bottom->addWidget(m_btnCheckUpdate);
+    m_lblVersionBadge = version;
+    root->addWidget(m_bottomBarWidget);
+    shell->addWidget(content, 1);
 
     connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
-        if (index == 0) {
-            if (m_viewport) {
-                m_viewport->reapplyTextures();
-                updateViewportKinematics();
-            }
-        } else if (index == 1) {
-            if (m_vehicleViewport) {
-                m_vehicleViewport->reapplyTextures();
-                if (m_currentVehicleRow >= 0 && m_currentVehicleRow < m_vehicles.size()) {
-                    loadVehicleModelForPreview(m_vehicles[m_currentVehicleRow]);
-                }
-                updateVehicleViewportMesh();
-                QTimer::singleShot(50, this, [this]() {
-                    if (m_tabs && m_tabs->currentIndex() == 1) {
-                        updateVehicleViewportMesh();
-                    }
-                });
-            }
-        } else if (index == 2) {
-            onRefreshScriptPreview();
-        }
+        updateWorkspace();
+        if (index == 0 && m_viewport) {
+            m_viewport->reapplyTextures();
+            updateViewportKinematics();
+        } else if (index == 1 && m_vehicleViewport) {
+            m_vehicleViewport->reapplyTextures();
+            if (m_currentVehicleRow >= 0 && m_currentVehicleRow < m_vehicles.size())
+                loadVehicleModelForPreview(m_vehicles[m_currentVehicleRow]);
+            updateVehicleViewportMesh();
+            QTimer::singleShot(50, this, [this]() {
+                if (m_tabs->currentIndex() == 1) updateVehicleViewportMesh();
+            });
+        } else if (index == 2) onRefreshScriptPreview();
     });
-
     retranslateUi();
+}
+
+void MainWindow::updateWorkspace() {
+    const bool tr = m_currentLang == AppLanguage::Turkish;
+    const int stage = m_tabs->currentIndex();
+    const QStringList titles = tr
+        ? QStringList{"Pantograf atölyesi", "Araç montajı", "Paketle ve dışa aktar"}
+        : QStringList{"Pantograph workshop", "Vehicle mounting", "Package & export"};
+    const QStringList hints = tr
+        ? QStringList{"Modelini içe aktar, eklemlerini ayarla ve hareketini test et.",
+                      "Tren paketini aç ve pantografları araç tavanlarına yerleştir.",
+                      "Scripti incele ve MTR için hazır kaynak paketini oluştur."}
+        : QStringList{"Import your model, refine its joints and test it in motion.",
+                      "Open a train pack and position pantographs on your vehicles.",
+                      "Review the generated script and build your MTR resource pack."};
+    m_workspaceTitle->setText(titles[stage]);
+    m_workspaceHint->setText(hints[stage]);
+    for (int i = 0; i < 3; ++i) m_navButtons[i]->setChecked(i == stage);
+    m_sessionStatus->setText(tr ? QString("%1 pantograf profili   /   %2 araç").arg(m_pantographs.size()).arg(m_vehicles.size())
+                               : QString("%1 pantograph profile(s)   /   %2 vehicles").arg(m_pantographs.size()).arg(m_vehicles.size()));
+    if (m_previewStack && m_viewport)
+        m_previewStack->setCurrentIndex(m_viewport->hasModel() ? 1 : 0);
 }
 
 void MainWindow::onLanguageChanged(int index) {
@@ -328,201 +330,141 @@ void MainWindow::onLanguageChanged(int index) {
 }
 
 void MainWindow::retranslateUi() {
-    bool isTr = (m_currentLang == AppLanguage::Turkish);
-
-    setWindowTitle(isTr ? "EDPC - EgEhE's Dinamik Pantograf Yapılandırıcı"
-                        : "EDPC - EgEhE's Dynamic Pantograph Configurator");
-
-    if (m_tabs) {
-        m_tabs->setTabText(0, isTr ? "1. Pantograf 3D Görünümü ve Ayarları"
-                                  : "1. Pantograph 3D View & Settings");
-        m_tabs->setTabText(1, isTr ? "2. Tren Paketi ve Vagon Montaj Ayarları"
-                                  : "2. Train Pack & Vehicle Mount Settings");
-        m_tabs->setTabText(2, isTr ? "3. Dışa Aktarma ve Paketleme"
-                                  : "3. Export & Packaging");
+    const bool isTr = m_currentLang == AppLanguage::Turkish;
+    setWindowTitle(isTr ? "EDPC — Pantograf Atölyesi" : "EDPC — Pantograph Studio");
+    auto text = [isTr](auto* widget, const char* en, const char* tr) {
+        if (widget) widget->setText(QString::fromUtf8(isTr ? tr : en));
+    };
+    auto title = [isTr](QGroupBox* widget, const char* en, const char* tr) {
+        if (widget) widget->setTitle(QString::fromUtf8(isTr ? tr : en));
+    };
+    text(m_stepLabel, "WORKFLOW", "ÇALIŞMA AKIŞI");
+    text(m_navButtons[0], "01   Pantograph\n       Model · kinematics", "01   Pantograf\n       Model ve kinematik");
+    text(m_navButtons[1], "02   Train pack\n       Vehicles · mounting", "02   Tren paketi\n       Araçlar ve montaj");
+    text(m_navButtons[2], "03   Export\n       Review · package", "03   Dışa aktar\n       İncele ve paketle");
+    for (int i = 0; i < 3; ++i) m_navButtons[i]->setToolTip(QString("Alt+%1").arg(i + 1));
+    title(m_grpPantoProfile, "Active profile", "Etkin profil");
+    text(m_btnAddPanto, "+ New", "+ Yeni");
+    text(m_btnRemovePanto, "Remove", "Sil");
+    title(m_grpModel, "Model source", "Model dosyası");
+    m_txtObjPath->setPlaceholderText(isTr ? ".obj veya .bbmodel dosyası" : ".obj or .bbmodel file");
+    text(m_btnBrowseObj, "Browse…", "Gözat…");
+    if (m_objPath.isEmpty()) {
+        text(m_lblModelInfo, "Import a model with p_base, p1, p2 and p3 groups.", "p_base, p1, p2 ve p3 gruplarını içeren bir model yükle.");
+        text(m_lblPivotsInfo, "Joint data appears after import.", "Eklem verileri içe aktardıktan sonra görünür.");
     }
-
-    // --- Tab 1 ---
-    if (m_grpPantoProfile) m_grpPantoProfile->setTitle(isTr ? "0. Pantograf Profili Yönetimi"
-                                                            : "0. Pantograph Profile Management");
-    if (m_btnAddPanto) m_btnAddPanto->setText(isTr ? "➕ Yeni" : "➕ New");
-    if (m_btnRemovePanto) m_btnRemovePanto->setText(isTr ? "🗑 Sil" : "🗑 Delete");
-    if (m_lblProfileInfo && m_currentPantoIndex >= 0 && m_currentPantoIndex < m_pantographs.size()) {
-        const auto& p = m_pantographs[m_currentPantoIndex];
-        m_lblProfileInfo->setText(QString("⚡ Script ID: %1_pantograph.js | Model: %2.obj").arg(p.randomScriptId, p.randomModelName));
+    title(m_grpPivots, "Joint positions", "Eklem konumları");
+    text(m_lblPivotHelp, "Coordinates in meters. Changes update the preview instantly.", "Koordinatlar metre cinsindedir. Değişiklikler önizlemeye anında yansır.");
+    text(m_lblP1, "● Base · p1", "● Taban · p1");
+    text(m_lblP2, "● Elbow · p2", "● Dirsek · p2");
+    text(m_lblP3, "● Head · p3", "● Başlık · p3");
+    text(m_chkP4Enabled, "Enable 4-bar linkage (p4)", "4 çubuklu bağlantı (p4)");
+    text(m_lblP4, "● Rod base · p4", "● Çubuk tabanı · p4");
+    text(m_lblP4Elbow, "● Rod knee", "● Çubuk dirseği");
+    text(m_btnResetPivots, "Reset joints to model defaults", "Eklemleri model değerlerine sıfırla");
+    title(m_grpParams, "Operating heights", "Çalışma yükseklikleri");
+    text(m_lblWireRef, "Reference wire", "Referans katener");
+    text(m_lblNoWirePark, "No-wire park", "Telsiz park");
+    text(m_chkDepotPark, "Enable depot parking", "Depoda park et");
+    text(m_lblDepotPark, "Depot park", "Depo parkı");
+    text(m_lblUpperThresh, "Upper threshold (+Δ)", "Üst eşik (+Δ)");
+    text(m_lblLowerThresh, "Lower threshold (−Δ)", "Alt eşik (−Δ)");
+    for (auto* button : {m_btnTestWireRef, m_btnTestNoWire, m_btnTestDepot}) text(button, "Test", "Dene");
+    title(m_grpLive, "Simulation", "Simülasyon");
+    text(m_lblTestHeight, "Wire height", "Katener yüksekliği");
+    text(m_chkShowWire, "Catenary wire", "Katener teli");
+    text(m_chkShowPivots, "Joint markers", "Eklem noktaları");
+    text(m_btnResetCam, "Reset view", "Görünümü sıfırla");
+    text(m_chkInvertCam, "Invert orbit", "Ters döndür");
+    text(m_lblTab1Help, "DRAG  Orbit     SHIFT + DRAG  Pan     SCROLL  Zoom", "SÜRÜKLE  Döndür     SHIFT + SÜRÜKLE  Kaydır     TEKERLEK  Yakınlaş");
+    text(m_btnNextToPack, "Continue to train pack  →", "Tren paketine geç  →");
+    text(m_lblTab1VpTitle, "3D WORKSPACE", "3D ÇALIŞMA ALANI");
+    if (!m_viewport) text(m_lblTab1VpTitle, "3D WORKSPACE · Vulkan unavailable", "3D ÇALIŞMA ALANI · Vulkan kullanılamıyor");
+    text(m_emptyTitle, "Your next pantograph starts here", "Yeni pantografın burada başlıyor");
+    text(m_emptyHint, "Import a Blockbench or OBJ model to configure its joints\nand preview its movement in real time.", "Eklemleri ayarlamak ve hareketi canlı görmek için\nbir Blockbench veya OBJ modeli içe aktar.");
+    text(m_emptyImport, "Import pantograph model", "Pantograf modelini içe aktar");
+    if (m_inspectorTabs) {
+        m_inspectorTabs->setTabText(0, isTr ? "Model" : "Model");
+        m_inspectorTabs->setTabText(1, isTr ? "Eklemler" : "Joints");
+        m_inspectorTabs->setTabText(2, isTr ? "Çalışma" : "Operation");
     }
-
-    if (m_grpModel) m_grpModel->setTitle(isTr ? "1. Pantograf 3D Model İçe Aktarma (.obj, .bbmodel)"
-                                              : "1. Pantograph 3D Model Import (.obj, .bbmodel)");
-    if (m_txtObjPath) m_txtObjPath->setPlaceholderText(isTr ? "Pantograf .obj veya .bbmodel dosyasını seçin..."
-                                                            : "Select pantograph .obj or .bbmodel file...");
-    if (m_btnBrowseObj) m_btnBrowseObj->setText(isTr ? "📁 Gözat..." : "📁 Browse...");
-    if (m_lblModelInfo && m_objPath.isEmpty()) {
-        m_lblModelInfo->setText(isTr ? "Henüz model yüklenmedi. (Gereken parçalar: p_base, p1, p2, p3)"
-                                     : "No model loaded yet. (Required parts: p_base, p1, p2, p3)");
-    }
-    if (m_lblPivotsInfo && m_objPath.isEmpty()) {
-        m_lblPivotsInfo->setText(isTr ? "Pivots: [Belirlenmedi]" : "Pivots: [Not loaded]");
-    }
-
-    if (m_grpPivots) m_grpPivots->setTitle(isTr ? "2. Pantograf Pivot Konumları ve Rig Düzenleme"
-                                                : "2. Pantograph Pivot Positions & Rigging");
-    if (m_lblPivotHelp) {
-        m_lblPivotHelp->setText(isTr ? "Pivot eksenlerini metre cinsinden ayarlayın (Y: yükseklik, Z: boylamasına konum). Değişiklikler 3D kinematiği anlık günceller."
-                                     : "Adjust pivot axes in meters (Y: height, Z: longitudinal). Changes update 3D kinematics in real time.");
-    }
-    if (m_lblP1) m_lblP1->setText(isTr ? "● Taban (p1):" : "● Base (p1):");
-    if (m_lblP2) m_lblP2->setText(isTr ? "● Dirsek (p2):" : "● Elbow (p2):");
-    if (m_lblP3) m_lblP3->setText(isTr ? "● Başlık (p3):" : "● Head / Tip (p3):");
-    if (m_chkP4Enabled) m_chkP4Enabled->setText(isTr ? "4-Bar Bağlantı Çubuğunu Etkinleştir (p4)" : "Enable 4-Bar Coupler Pushrod (p4)");
-    if (m_lblP4) m_lblP4->setText(isTr ? "● İtme Çubuğu Taban (p4):" : "● Pushrod Base (p4):");
-    if (m_lblP4Elbow) m_lblP4Elbow->setText(isTr ? "● İtme Çubuğu Dirsek (p4_elbow):" : "● Pushrod Knee (p4_elbow):");
-    if (m_btnResetPivots) {
-        m_btnResetPivots->setText(isTr ? "🔄 Orijinal Değerlere Sıfırla" : "🔄 Reset to Original");
-        m_btnResetPivots->setToolTip(isTr ? "Pivot konumlarını modeldeki varsayılan değerlere sıfırla"
-                                          : "Reset pivot positions to default values from loaded model");
-    }
-
-    if (m_grpParams) m_grpParams->setTitle(isTr ? "3. Kataner ve Çalışma Parametreleri"
-                                                : "3. Catenary & Operating Parameters");
-    if (m_lblWireRef) m_lblWireRef->setText(isTr ? "Referans Kataner Yüksekliği:" : "Reference Catenary Height:");
-    if (m_btnTestWireRef) {
-        m_btnTestWireRef->setText("👁 Test");
-        m_btnTestWireRef->setToolTip(isTr ? "Referans kataner yüksekliğinde pantograf pozunu simüle et"
-                                          : "Simulate pantograph pose at reference catenary height");
-    }
-    if (m_lblNoWirePark) m_lblNoWirePark->setText(isTr ? "Boşta / Telsiz Park Yüksekliği:" : "Idle / No-Wire Park Height:");
-    if (m_btnTestNoWire) {
-        m_btnTestNoWire->setText("👁 Test");
-        m_btnTestNoWire->setToolTip(isTr ? "Boşta/telsiz park yüksekliğini simüle et"
-                                         : "Simulate idle / no-wire park height");
-    }
-    if (m_chkDepotPark) m_chkDepotPark->setText(isTr ? "Depo Park Modunu Etkinleştir" : "Enable Depot Park Mode");
-    if (m_lblDepotPark) m_lblDepotPark->setText(isTr ? "Depo Park Yüksekliği:" : "Depot Park Height:");
-    if (m_btnTestDepot) {
-        m_btnTestDepot->setText("👁 Test");
-        m_btnTestDepot->setToolTip(isTr ? "Depo park yüksekliğini simüle et" : "Simulate depot park height");
-    }
-    if (m_lblUpperThresh) m_lblUpperThresh->setText(isTr ? "Üst Kataner Eşik Değeri (+Δ):" : "Upper Catenary Threshold (+Δ):");
-    if (m_lblLowerThresh) m_lblLowerThresh->setText(isTr ? "Alt Kataner Eşik Değeri (-Δ):" : "Lower Catenary Threshold (-Δ):");
-
-    if (m_grpLive) m_grpLive->setTitle(isTr ? "4. Canlı Kinematik ve Etkileşimli Test"
-                                            : "4. Live Kinematics & Interactive Test");
-    if (m_lblTestHeight) m_lblTestHeight->setText(isTr ? "Simüle Kataner Yüksekliği:" : "Simulated Catenary Height:");
-    if (m_chkShowWire) m_chkShowWire->setText(isTr ? "Referans Kataner Telini Göster" : "Show Reference Catenary Wire");
-    if (m_chkShowPivots) m_chkShowPivots->setText(isTr ? "Pantograf Pivot Noktalarını Göster" : "Show Pantograph Pivot Markers");
-    if (m_btnResetCam) m_btnResetCam->setText(isTr ? "🎥 Kamerayı Sıfırla" : "🎥 Reset Camera");
-    if (m_chkInvertCam) m_chkInvertCam->setText(isTr ? "Ters Kamera (Invert Controls)" : "Invert Orbit Controls");
-    if (m_lblTab1Help) m_lblTab1Help->setText(isTr ? "💡 3D Kontroller: Sol Tık: Döndür | Shift+Sol / Orta Tık: Kaydır | Tekerlek: Yakınlaş"
-                                                   : "💡 3D Controls: Left Drag: Orbit | Shift+Left / Middle Drag: Pan | Wheel: Zoom");
-    if (m_btnNextToPack) m_btnNextToPack->setText(isTr ? "Sonraki Adım: Tren Paketi Seçimi ➔"
-                                                       : "Next Step: Train Pack Selection ➔");
-    if (m_lblTab1VpTitle) m_lblTab1VpTitle->setText(isTr ? "⚡ 3D Gerçek Zamanlı Önizleme"
-                                                         : "⚡ 3D Real-Time Preview");
-
-    // --- Tab 2 ---
-    if (m_grpPack) m_grpPack->setTitle(isTr ? "1. Tren Paketi İçe Aktarma (.zip veya Çıkarılmış Klasör)"
-                                            : "1. Train Pack Import (.zip or Unpacked Folder)");
-    if (m_txtPackPath) m_txtPackPath->setPlaceholderText(isTr ? "Tren paketi .zip dosyasını veya klasörünü seçin..."
-                                                              : "Select train pack .zip file or folder...");
-    if (m_btnBrowseZip) m_btnBrowseZip->setText(isTr ? "📦 ZIP Paketi Seç..." : "📦 Select ZIP Pack...");
-    if (m_btnBrowseFolder) m_btnBrowseFolder->setText(isTr ? "📂 Klasör Seç..." : "📂 Select Folder...");
-    if (m_lblPackStatus && m_packInputPath.isEmpty()) {
-        m_lblPackStatus->setText(isTr ? "Henüz tren paketi seçilmedi." : "No train pack selected yet.");
-    }
-
-    if (m_grpVehicles) m_grpVehicles->setTitle(isTr ? "2. Paketteki Araçlar (Pantograf Takılacakları İşaretleyin)"
-                                                    : "2. Pack Vehicles (Check Vehicles to Mount Pantograph)");
-    if (m_tableVehicles) {
-        m_tableVehicles->setHorizontalHeaderLabels(isTr
-            ? QStringList{"Panto?", "Pantograf", "Araç ID", "Araç Adı", "Açıklama"}
-            : QStringList{"Panto?", "Pantograph", "Vehicle ID", "Vehicle Name", "Description"});
-    }
-    if (m_btnSelectAll) m_btnSelectAll->setText(isTr ? "Tümünü İşaretle" : "Check All");
-    if (m_btnDeselectAll) m_btnDeselectAll->setText(isTr ? "Tümünün İşaretini Kaldır" : "Uncheck All");
-
-    if (m_groupVehicleMount) m_groupVehicleMount->setTitle(isTr ? "3. Seçili Araç Pantograf Montaj Ayarları"
-                                                                : "3. Selected Vehicle Roof Mount Settings");
-    if (m_lblVehiclePanto) m_lblVehiclePanto->setText(isTr ? "Atanan Pantograf:" : "Assigned Pantograph:");
-    if (m_lblSelectedVehicleTitle) {
-        if (m_currentVehicleRow >= 0 && m_currentVehicleRow < m_vehicles.size()) {
-            const auto& v = m_vehicles[m_currentVehicleRow];
-            m_lblSelectedVehicleTitle->setText(isTr ? QString("Seçili Araç: %1 (%2)").arg(v.name).arg(v.id)
-                                                   : QString("Selected Vehicle: %1 (%2)").arg(v.name).arg(v.id));
-        } else {
-            m_lblSelectedVehicleTitle->setText(isTr ? "Lütfen soldan bir araç seçin."
-                                                   : "Please select a vehicle from the list.");
-        }
-    }
-    if (m_lblMountHeight) m_lblMountHeight->setText(isTr ? "Tavan Montaj Yüksekliği (Y):" : "Roof Mount Height (Y):");
-    if (m_lblMountX) m_lblMountX->setText(isTr ? "Enine Montaj Ofseti (X):" : "Transverse Mount Offset (X):");
-    if (m_lblMountZ) m_lblMountZ->setText(isTr ? "Boyuna Montaj Ofseti (Z):" : "Longitudinal Mount Offset (Z):");
-    if (m_lblRotationY) m_lblRotationY->setText(isTr ? "Yönelim / Rotasyon (Y):" : "Orientation / Rotation (Y):");
-    if (m_comboRotationY) {
-        m_comboRotationY->setItemText(0, isTr ? "0.0° (İleri / Normal)" : "0.0° (Forward / Normal)");
-        m_comboRotationY->setItemText(1, isTr ? "180.0° (Geri / Ters)" : "180.0° (Backward / Inverted)");
-    }
-    if (m_lblWireDetectZ) m_lblWireDetectZ->setText(isTr ? "Kataner Algılama Z Ofseti:" : "Wire Detection Z Offset:");
-    if (m_lblPresets) m_lblPresets->setText(isTr ? "Hızlı Konum Önayarları:" : "Quick Position Presets:");
-    if (m_btnPreFront) m_btnPreFront->setText(isTr ? "📍 Ön Tavan (+5.2m)" : "📍 Front Roof (+5.2m)");
-    if (m_btnPreRear) m_btnPreRear->setText(isTr ? "📍 Arka Tavan (-5.2m, 180°)" : "📍 Rear Roof (-5.2m, 180°)");
-    if (m_btnPreCenter) m_btnPreCenter->setText(isTr ? "📍 Merkez (0.0m)" : "📍 Center (0.0m)");
-
-    if (m_lblTab2VpTitle) m_lblTab2VpTitle->setText(isTr ? "⚡ 3D Araç ve Tavan Montaj Önizlemesi"
-                                                         : "⚡ 3D Vehicle & Roof Mount Preview");
-    if (m_btnResetVehCam) m_btnResetVehCam->setText(isTr ? "🎥 Ön Görünüm (Sıfırla)" : "🎥 Front View (Reset)");
-    if (m_btnFrontVehCam) m_btnFrontVehCam->setText(isTr ? "🎥 Ön Kabin (45°)" : "🎥 Front Cab (45°)");
-    if (m_btnRearVehCam) m_btnRearVehCam->setText(isTr ? "🎥 Arka Geçit (135°)" : "🎥 Rear Gangway (135°)");
-    if (m_chkInvertVehCam) m_chkInvertVehCam->setText(isTr ? "Ters Kamera (Invert Controls)" : "Invert Orbit Controls");
-    if (m_lblTab2Help) m_lblTab2Help->setText(isTr ? "💡 3D Kontroller: Sol Tık: Döndür | Shift+Sol / Orta Tık: Kaydır | Tekerlek: Yakınlaş"
-                                                   : "💡 3D Controls: Left Drag: Orbit | Shift+Left / Middle Drag: Pan | Wheel: Zoom");
-    if (m_btnNextToExport) m_btnNextToExport->setText(isTr ? "Sonraki Adım: Dışa Aktarma ve Paketleme ➔"
-                                                           : "Next Step: Export & Packaging ➔");
-
-    // --- Tab 3 ---
-    if (m_grpConfig) m_grpConfig->setTitle(isTr ? "1. Paketleme Ayarları"
-                                                : "1. Packaging Settings");
-    if (m_lblOutputPath) m_lblOutputPath->setText(isTr ? "Hedef ZIP Paketi Kayıt Yolu:" : "Target Output ZIP Path:");
-    if (m_btnBrowseOut) m_btnBrowseOut->setText(isTr ? "📁 Gözat..." : "📁 Browse...");
-
-    if (m_grpPreview) m_grpPreview->setTitle(isTr ? "2. Oluşturulacak JavaScript Kod Önizlemesi (MTR / EgEhELib)"
-                                                  : "2. Generated JavaScript Code Preview (MTR / EgEhELib)");
-    if (m_lblScriptPreviewHint) m_lblScriptPreviewHint->setText(isTr
-        ? "Bu script tren paketinin içine otomatik olarak assets/mtr/panto/ altına gömülecektir."
-        : "This script will be automatically embedded into assets/mtr/panto/ inside the train pack.");
-    if (m_btnRefreshPreview) m_btnRefreshPreview->setText(isTr ? "🔄 Önizlemeyi Yenile" : "🔄 Refresh Preview");
-
-    if (m_grpAction) m_grpAction->setTitle(isTr ? "3. Paketleme İşlemi" : "3. Packaging Action");
-    if (m_btnPackage) m_btnPackage->setText(isTr ? "🚀 PAKETLE VE DIŞA AKTAR (MTR Uyumlu ZIP Üret)"
-                                                 : "🚀 PACKAGE & EXPORT (Produce MTR-Ready ZIP)");
-    if (m_btnOpenOutputFolder) m_btnOpenOutputFolder->setText(isTr ? "📁 Çıktı Klasörünü Aç" : "📁 Open Output Folder");
-    if (m_lblExportStatus && m_lastExportedFolder.isEmpty()) {
-        m_lblExportStatus->setText(isTr ? "Hazır." : "Ready.");
-    }
-
-    if (m_btnCheckUpdate) {
-        m_btnCheckUpdate->setText(isTr ? "🔄 Güncellemeleri Denetle" : "🔄 Check for Updates");
-    }
-
+    title(m_grpPack, "Train pack source", "Tren paketi kaynağı");
+    m_txtPackPath->setPlaceholderText(isTr ? "Bir ZIP paketi veya klasör seç" : "Choose a ZIP pack or an unpacked folder");
+    text(m_btnBrowseZip, "Open ZIP…", "ZIP aç…");
+    text(m_btnBrowseFolder, "Open folder…", "Klasör aç…");
+    if (m_packInputPath.isEmpty()) text(m_lblPackStatus, "No pack loaded. Vehicles appear here after import.", "Paket yüklenmedi. İçe aktardıktan sonra araçlar burada görünür.");
+    title(m_grpVehicles, "Vehicles", "Araçlar");
+    m_tableVehicles->setHorizontalHeaderLabels(isTr
+        ? QStringList{"Tak", "Pantograf", "Araç ID", "Araç adı", "Açıklama"}
+        : QStringList{"Mount", "Pantograph", "Vehicle ID", "Vehicle name", "Description"});
+    text(m_btnSelectAll, "Select all", "Tümünü seç");
+    text(m_btnDeselectAll, "Clear selection", "Seçimi temizle");
+    title(m_groupVehicleMount, "Roof mounting", "Tavan montajı");
+    text(m_lblVehiclePanto, "Pantograph", "Pantograf");
+    if (m_currentVehicleRow < 0) text(m_lblSelectedVehicleTitle, "Select a vehicle to configure", "Ayarlamak için bir araç seç");
+    text(m_lblMountHeight, "Height · Y", "Yükseklik · Y");
+    text(m_lblMountX, "Lateral · X", "Enine · X");
+    text(m_lblMountZ, "Longitudinal · Z", "Boyuna · Z");
+    text(m_lblRotationY, "Orientation", "Yönelim");
+    m_comboRotationY->setItemText(0, isTr ? "0° · İleri" : "0° · Forward");
+    m_comboRotationY->setItemText(1, isTr ? "180° · Geri" : "180° · Backward");
+    text(m_lblWireDetectZ, "Wire detection · Z", "Tel algılama · Z");
+    text(m_lblPresets, "POSITION PRESETS", "KONUM ÖNAYARLARI");
+    text(m_btnPreFront, "Front  +5.2 m", "Ön  +5.2 m");
+    text(m_btnPreRear, "Rear  −5.2 m / 180°", "Arka  −5.2 m / 180°");
+    text(m_btnPreCenter, "Center  0 m", "Merkez  0 m");
+    text(m_lblTab2VpTitle, "VEHICLE PREVIEW", "ARAÇ ÖNİZLEMESİ");
+    text(m_btnResetVehCam, "Reset", "Sıfırla");
+    text(m_btnFrontVehCam, "Front cab", "Ön kabin");
+    text(m_btnRearVehCam, "Rear view", "Arka görünüm");
+    text(m_chkInvertVehCam, "Invert orbit", "Ters döndür");
+    text(m_vehicleEmptyTitle, "A place for your pantograph", "Pantografın için bir yer");
+    text(m_vehicleEmptyHint, "Open a train pack, then select a vehicle\nto preview and adjust its roof mounting.", "Bir tren paketi aç, ardından tavan montajını\nayarlamak için bir araç seç.");
+    text(m_vehicleEmptyImport, "Open train pack", "Tren paketini aç");
+    if (m_packInputPath.isEmpty()) text(m_lblVehicleVpInfo, "No vehicle selected", "Araç seçilmedi");
+    if (!m_vehicleViewport) m_vehicleEmptyHint->setToolTip(isTr ? "3D önizleme için Vulkan sürücüsü gereklidir." : "A Vulkan driver is required for 3D preview.");
+    text(m_lblTab2Help, "Drag to orbit · Shift + drag to pan · Scroll to zoom", "Sürükle: döndür · Shift + sürükle: kaydır · Tekerlek: yakınlaş");
+    text(m_btnNextToExport, "Continue to export  →", "Dışa aktarmaya geç  →");
+    title(m_grpConfig, "Output destination", "Çıktı konumu");
+    text(m_lblOutputPath, "Resource pack · ZIP", "Kaynak paketi · ZIP");
+    text(m_btnBrowseOut, "Browse…", "Gözat…");
+    m_txtOutputPath->setPlaceholderText(isTr ? "Çıktı ZIP dosyasının yolu" : "Path to the output ZIP file");
+    title(m_grpPreview, "Generated script", "Oluşturulan script");
+    text(m_lblScriptPreviewHint, "Included in your pack at assets/mtr/panto/", "Paket içindeki konumu: assets/mtr/panto/");
+    text(m_btnRefreshPreview, "Refresh", "Yenile");
+    title(m_grpAction, "Build resource pack", "Kaynak paketini oluştur");
+    text(m_btnPackage, "Package & export ZIP  ↗", "Paketle ve ZIP olarak aktar  ↗");
+    text(m_btnOpenOutputFolder, "Open output folder", "Çıktı klasörünü aç");
+    if (m_lastExportedFolder.isEmpty()) text(m_lblExportStatus, "Choose a model, mount it on a vehicle, then export your pack.", "Bir model seç, araca yerleştir ve paketini dışa aktar.");
+    text(m_btnCheckUpdate, "Check for updates", "Güncellemeleri denetle");
     updatePantographCombos();
+    if (m_currentPantoIndex >= 0 && m_currentPantoIndex < m_pantographs.size()) {
+        const auto& p = m_pantographs[m_currentPantoIndex];
+        m_lblProfileInfo->setText(QString("%1_pantograph.js\n%2.obj").arg(p.randomScriptId, p.randomModelName));
+    }
     for (int r = 0; r < m_vehicles.size(); ++r) {
-        if (r < m_tableVehicles->rowCount() && m_tableVehicles->item(r, 1)) {
-            m_tableVehicles->item(r, 1)->setText(
-                m_vehicles[r].hasPantograph ? m_pantographs[m_vehicles[r].pantographIndex].displayName(isTr) : "—"
-            );
-        }
+        if (r < m_tableVehicles->rowCount() && m_tableVehicles->item(r, 1))
+            m_tableVehicles->item(r, 1)->setText(m_vehicles[r].hasPantograph ? m_pantographs[m_vehicles[r].pantographIndex].displayName(isTr) : "—");
+    }
+    updateWorkspace();
+    if (m_viewport && m_viewport->hasModel()) updateViewportKinematics();
+    else {
+        text(m_lblArmAngles, "p1  —     p2  —     p4  —", "p1  —     p2  —     p4  —");
+        m_lblReachability->setStyleSheet("color: #969aa3;");
+        text(m_lblReachability, "Awaiting model", "Model bekleniyor");
     }
 }
 
 QWidget* MainWindow::createTab1Pantograph() {
     QWidget* tab = new QWidget(this);
     QHBoxLayout* tabLayout = new QHBoxLayout(tab);
-    tabLayout->setContentsMargins(8, 8, 8, 8);
+    tabLayout->setContentsMargins(0, 0, 0, 0);
     tabLayout->setSpacing(12);
 
     // Left control sidebar
     QWidget* leftPanel = new QWidget(tab);
-    leftPanel->setFixedWidth(450);
+    leftPanel->setMinimumWidth(355);
+    leftPanel->setMaximumWidth(410);
     QVBoxLayout* leftLayout = new QVBoxLayout(leftPanel);
     leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->setSpacing(10);
@@ -548,10 +490,24 @@ QWidget* MainWindow::createTab1Pantograph() {
     grpPantoLayout->addLayout(pantoRow);
 
     m_lblProfileInfo = new QLabel(m_grpPantoProfile);
-    m_lblProfileInfo->setStyleSheet("color: #00adb5; font-size: 11px; font-family: monospace;");
+    m_lblProfileInfo->setStyleSheet("color: #a2a6ae; font-size: 10px; font-family: monospace;");
+    m_lblProfileInfo->setWordWrap(true);
     grpPantoLayout->addWidget(m_lblProfileInfo);
 
     leftLayout->addWidget(m_grpPantoProfile);
+    m_inspectorTabs = new QTabWidget(leftPanel);
+    leftLayout->addWidget(m_inspectorTabs, 1);
+    auto inspectorPage = [this](QWidget* widget, const QString& title) {
+        auto* page = new QWidget();
+        auto* layout = new QVBoxLayout(page);
+        layout->setContentsMargins(0, 8, 0, 0);
+        layout->addWidget(widget);
+        layout->addStretch();
+        auto* scroll = new QScrollArea();
+        scroll->setWidgetResizable(true);
+        scroll->setWidget(page);
+        m_inspectorTabs->addTab(scroll, title);
+    };
 
     // --- Group 1: OBJ / BBModel File Selection ---
     m_grpModel = new QGroupBox("1. Pantograph 3D Model Import (.obj, .bbmodel)", leftPanel);
@@ -569,14 +525,15 @@ QWidget* MainWindow::createTab1Pantograph() {
 
     m_lblModelInfo = new QLabel("No model loaded yet. (Required parts: p_base, p1, p2, p3)", m_grpModel);
     m_lblModelInfo->setWordWrap(true);
-    m_lblModelInfo->setStyleSheet("color: #8f96a3; font-style: italic;");
+    m_lblModelInfo->setStyleSheet("color: #8f96a3; ");
     grpModelLayout->addWidget(m_lblModelInfo);
 
     m_lblPivotsInfo = new QLabel("Pivots: [Not loaded]", m_grpModel);
+    m_lblPivotsInfo->setWordWrap(true);
     m_lblPivotsInfo->setStyleSheet("font-family: monospace; font-size: 11px; color: #a0a8b7;");
     grpModelLayout->addWidget(m_lblPivotsInfo);
 
-    leftLayout->addWidget(m_grpModel);
+    inspectorPage(m_grpModel, "Model");
 
     // --- Group 2: Pantograph Pivot Positions & Rigging ---
     m_grpPivots = new QGroupBox("2. Pantograph Pivot Positions & Rigging", leftPanel);
@@ -592,11 +549,11 @@ QWidget* MainWindow::createTab1Pantograph() {
     pivotGrid->setHorizontalSpacing(8);
     pivotGrid->setVerticalSpacing(4);
 
-    QLabel* hdrJoint = new QLabel("Joint / Pivot", m_grpPivots);
+    QLabel* hdrJoint = new QLabel("JOINT", m_grpPivots);
     hdrJoint->setStyleSheet("font-weight: bold; color: #a0a8b7; font-size: 11px;");
-    QLabel* hdrY = new QLabel("Y (Height)", m_grpPivots);
+    QLabel* hdrY = new QLabel("Y (m)", m_grpPivots);
     hdrY->setStyleSheet("font-weight: bold; color: #a0a8b7; font-size: 11px;");
-    QLabel* hdrZ = new QLabel("Z (Forward/Back)", m_grpPivots);
+    QLabel* hdrZ = new QLabel("Z (m)", m_grpPivots);
     hdrZ->setStyleSheet("font-weight: bold; color: #a0a8b7; font-size: 11px;");
 
     pivotGrid->addWidget(hdrJoint, 0, 0);
@@ -609,7 +566,7 @@ QWidget* MainWindow::createTab1Pantograph() {
         spin->setSingleStep(0.001);
         spin->setDecimals(5);
         spin->setValue(val);
-        spin->setSuffix(" m");
+        spin->setMinimumWidth(82);
         connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::onPivotSpinboxChanged);
         return spin;
     };
@@ -688,12 +645,13 @@ QWidget* MainWindow::createTab1Pantograph() {
     grpPivotsLayout->addLayout(pivotBtnRow);
 
     m_grpPivots->setEnabled(false);
-    leftLayout->addWidget(m_grpPivots);
+    inspectorPage(m_grpPivots, "Joints");
 
     // --- Group 3: Parameters ---
     m_grpParams = new QGroupBox("3. Catenary & Operating Parameters", leftPanel);
     QFormLayout* formParams = new QFormLayout(m_grpParams);
-    formParams->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    formParams->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    formParams->setRowWrapPolicy(QFormLayout::WrapAllRows);
     formParams->setSpacing(8);
 
     QHBoxLayout* wireRefRow = new QHBoxLayout();
@@ -770,7 +728,7 @@ QWidget* MainWindow::createTab1Pantograph() {
     m_lblLowerThresh = new QLabel("Lower Catenary Threshold (-Δ):", m_grpParams);
     formParams->addRow(m_lblLowerThresh, m_spinLowerThresh);
 
-    leftLayout->addWidget(m_grpParams);
+    inspectorPage(m_grpParams, "Operation");
 
     // --- Group 4: Live Interactive Testing ---
     m_grpLive = new QGroupBox("4. Live Kinematics & Interactive Test", leftPanel);
@@ -781,12 +739,14 @@ QWidget* MainWindow::createTab1Pantograph() {
     m_lblTestHeight = new QLabel("Simulated Catenary Height:", m_grpLive);
     testHeightRow->addWidget(m_lblTestHeight);
     m_spinTestHeight = new QDoubleSpinBox(m_grpLive);
+    m_spinTestHeight->setMaximumWidth(140);
     m_spinTestHeight->setRange(0.20, 2.60);
     m_spinTestHeight->setSingleStep(0.005);
     m_spinTestHeight->setDecimals(4);
     m_spinTestHeight->setValue(1.4480);
     m_spinTestHeight->setSuffix(" m");
     connect(m_spinTestHeight, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::onKinematicsSpinChanged);
+    testHeightRow->addStretch();
     testHeightRow->addWidget(m_spinTestHeight);
     liveLayout->addLayout(testHeightRow);
 
@@ -799,16 +759,21 @@ QWidget* MainWindow::createTab1Pantograph() {
     m_chkShowWire = new QCheckBox("Show Reference Catenary Wire", m_grpLive);
     m_chkShowWire->setChecked(true);
     connect(m_chkShowWire, &QCheckBox::toggled, this, &MainWindow::onShowWireToggled);
-    liveLayout->addWidget(m_chkShowWire);
+
 
     m_chkShowPivots = new QCheckBox("Show Pantograph Pivot Markers", m_grpLive);
     m_chkShowPivots->setChecked(true);
     connect(m_chkShowPivots, &QCheckBox::toggled, this, [this](bool checked) {
         if (m_viewport) m_viewport->setShowPivots(checked);
     });
-    liveLayout->addWidget(m_chkShowPivots);
+    auto* visibilityRow = new QHBoxLayout();
+    visibilityRow->addWidget(m_chkShowWire);
+    visibilityRow->addWidget(m_chkShowPivots);
+    visibilityRow->addStretch();
+    liveLayout->addLayout(visibilityRow);
 
     m_lblArmAngles = new QLabel("Lower Arm (p1): -- | Upper Arm (p2): -- | Pushrod (p4): --", m_grpLive);
+    m_lblArmAngles->setWordWrap(true);
     m_lblArmAngles->setStyleSheet("font-weight: 600; color: #61afef;");
     liveLayout->addWidget(m_lblArmAngles);
 
@@ -836,7 +801,7 @@ QWidget* MainWindow::createTab1Pantograph() {
     m_lblTab1Help->setWordWrap(true);
     liveLayout->addWidget(m_lblTab1Help);
 
-    leftLayout->addWidget(m_grpLive);
+
 
     m_btnNextToPack = new QPushButton("Next Step: Train Pack Selection ➔", leftPanel);
     m_btnNextToPack->setObjectName("actionButton");
@@ -845,14 +810,7 @@ QWidget* MainWindow::createTab1Pantograph() {
     });
     leftLayout->addWidget(m_btnNextToPack);
 
-    leftLayout->addStretch();
 
-    QScrollArea* leftScroll = new QScrollArea(tab);
-    leftScroll->setWidgetResizable(true);
-    leftScroll->setFrameShape(QFrame::NoFrame);
-    leftScroll->setFixedWidth(470);
-    leftScroll->setWidget(leftPanel);
-    tabLayout->addWidget(leftScroll);
 
     // Right Viewport Panel
     QWidget* rightPanel = new QWidget(tab);
@@ -862,17 +820,45 @@ QWidget* MainWindow::createTab1Pantograph() {
 
     QHBoxLayout* vpHeader = new QHBoxLayout();
     m_lblTab1VpTitle = new QLabel("⚡ 3D Real-Time Preview", rightPanel);
-    m_lblTab1VpTitle->setStyleSheet("font-weight: bold; font-size: 13px; color: #00adb5;");
+    m_lblTab1VpTitle->setStyleSheet("font-weight: bold; font-size: 13px; color: #eea66b;");
     vpHeader->addWidget(m_lblTab1VpTitle);
     vpHeader->addStretch();
     rightLayout->addLayout(vpHeader);
+    m_previewStack = new QStackedWidget(rightPanel);
+    auto* empty = new QWidget(m_previewStack);
+    empty->setObjectName("canvasEmpty");
+    auto* emptyLayout = new QVBoxLayout(empty);
+    emptyLayout->setContentsMargins(16, 16, 16, 16);
+    emptyLayout->setSpacing(10);
+    emptyLayout->addStretch();
+    emptyLayout->addWidget(new PantographEmblem(empty), 0, Qt::AlignHCenter);
+    m_emptyTitle = new QLabel(empty);
+    m_emptyTitle->setObjectName("emptyTitle");
+    m_emptyTitle->setWordWrap(true);
+    m_emptyTitle->setAlignment(Qt::AlignCenter);
+    emptyLayout->addWidget(m_emptyTitle);
+    m_emptyHint = new QLabel(empty);
+    m_emptyHint->setObjectName("muted");
+    m_emptyHint->setWordWrap(true);
+    m_emptyHint->setAlignment(Qt::AlignCenter);
+    emptyLayout->addWidget(m_emptyHint);
+    m_emptyImport = new QPushButton(empty);
+    m_emptyImport->setObjectName("actionButton");
+    connect(m_emptyImport, &QPushButton::clicked, this, &MainWindow::onBrowseModel);
+    emptyLayout->addWidget(m_emptyImport, 0, Qt::AlignHCenter);
+    auto* formats = new QLabel("BLOCKBENCH .bbmodel   /   WAVEFRONT .obj", empty);
+    formats->setObjectName("eyebrow");
+    emptyLayout->addWidget(formats, 0, Qt::AlignHCenter);
+    emptyLayout->addStretch();
+    m_previewStack->addWidget(empty);
+    rightLayout->addWidget(m_previewStack, 1);
 
     // Initialize Vulkan Viewport
     if (m_vulkanInst && m_vulkanInst->isValid()) {
         m_viewport = new VulkanViewport();
         m_viewport->setVulkanInstance(m_vulkanInst);
         m_viewportContainer = QWidget::createWindowContainer(m_viewport, rightPanel);
-        m_viewportContainer->setMinimumSize(400, 300);
+        m_viewportContainer->setMinimumSize(300, 200);
         m_viewportContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         m_viewportContainer->setFocusPolicy(Qt::TabFocus);
 
@@ -909,22 +895,20 @@ QWidget* MainWindow::createTab1Pantograph() {
 
         connect(m_viewport, &VulkanViewport::kinematicsUpdated, this, &MainWindow::onKinematicsUpdated);
 
-        rightLayout->addWidget(m_viewportContainer);
-    } else {
-        QLabel* errLabel = new QLabel("Vulkan driver could not be initialized. Please check your Vulkan installation.", rightPanel);
-        errLabel->setAlignment(Qt::AlignCenter);
-        errLabel->setStyleSheet("color: #e06c75; font-weight: bold;");
-        rightLayout->addWidget(errLabel);
+        m_previewStack->addWidget(m_viewportContainer);
+        connect(m_viewport, &VulkanViewport::modelLoaded, this, [this]() { updateWorkspace(); });
     }
 
+    rightLayout->addWidget(m_grpLive);
     tabLayout->addWidget(rightPanel, 1);
+    tabLayout->addWidget(leftPanel);
     return tab;
 }
 
 QWidget* MainWindow::createTab2TrainPack() {
     QWidget* tab = new QWidget(this);
     QVBoxLayout* tabLayout = new QVBoxLayout(tab);
-    tabLayout->setContentsMargins(12, 12, 12, 12);
+    tabLayout->setContentsMargins(0, 0, 0, 0);
     tabLayout->setSpacing(12);
 
     // Pack file picker
@@ -948,16 +932,19 @@ QWidget* MainWindow::createTab2TrainPack() {
     packLayout->addLayout(packFileRow);
 
     m_lblPackStatus = new QLabel("No train pack selected yet.", m_grpPack);
-    m_lblPackStatus->setStyleSheet("color: #8f96a3; font-style: italic;");
+    m_lblPackStatus->setStyleSheet("color: #8f96a3; ");
     packLayout->addWidget(m_lblPackStatus);
 
     tabLayout->addWidget(m_grpPack);
 
     // Splitter for Vehicle List and Vehicle Mount adjustments
     QSplitter* splitter = new QSplitter(Qt::Horizontal, tab);
+    splitter->setHandleWidth(14);
+    splitter->setStyleSheet("QSplitter::handle { background: #191b1f; }");
 
     // Left: Vehicles Table
     QWidget* leftVehicles = new QWidget(splitter);
+    leftVehicles->setMinimumWidth(350);
     QVBoxLayout* leftVehiclesLayout = new QVBoxLayout(leftVehicles);
     leftVehiclesLayout->setContentsMargins(0, 0, 0, 0);
 
@@ -989,11 +976,16 @@ QWidget* MainWindow::createTab2TrainPack() {
     selBtnsRow->addStretch();
     grpVehiclesLayout->addLayout(selBtnsRow);
 
-    leftVehiclesLayout->addWidget(m_grpVehicles);
+    m_tableVehicles->setAlternatingRowColors(true);
+    m_tableVehicles->setShowGrid(false);
+    m_tableVehicles->verticalHeader()->hide();
+    m_tableVehicles->verticalHeader()->setDefaultSectionSize(34);
+    m_tableVehicles->setMinimumHeight(120);
+    leftVehiclesLayout->addWidget(m_grpVehicles, 1);
     splitter->addWidget(leftVehicles);
 
     // Middle: Selected Vehicle Mount Controls
-    QWidget* rightMount = new QWidget(splitter);
+    QWidget* rightMount = new QWidget(leftVehicles);
     QVBoxLayout* rightMountLayout = new QVBoxLayout(rightMount);
     rightMountLayout->setContentsMargins(0, 0, 0, 0);
 
@@ -1001,11 +993,12 @@ QWidget* MainWindow::createTab2TrainPack() {
     QVBoxLayout* mountLayout = new QVBoxLayout(m_groupVehicleMount);
 
     m_lblSelectedVehicleTitle = new QLabel("Please select a vehicle from the list.", m_groupVehicleMount);
-    m_lblSelectedVehicleTitle->setStyleSheet("font-weight: bold; font-size: 14px; color: #00adb5;");
+    m_lblSelectedVehicleTitle->setWordWrap(true);
+    m_lblSelectedVehicleTitle->setStyleSheet("font-weight: bold; font-size: 14px; color: #eea66b;");
     mountLayout->addWidget(m_lblSelectedVehicleTitle);
 
     QFormLayout* formMount = new QFormLayout();
-    formMount->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    formMount->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     formMount->setSpacing(10);
 
     m_lblVehiclePanto = new QLabel("Assigned Pantograph:", m_groupVehicleMount);
@@ -1066,7 +1059,7 @@ QWidget* MainWindow::createTab2TrainPack() {
     m_lblPresets->setStyleSheet("font-weight: bold; color: #abb2bf; margin-top: 10px;");
     mountLayout->addWidget(m_lblPresets);
 
-    QHBoxLayout* presetRow = new QHBoxLayout();
+    QVBoxLayout* presetRow = new QVBoxLayout();
     m_btnPreFront = new QPushButton("📍 Front Roof (+5.2m)", m_groupVehicleMount);
     connect(m_btnPreFront, &QPushButton::clicked, this, &MainWindow::onPresetFrontRoof);
     m_btnPreRear = new QPushButton("📍 Rear Roof (-5.2m, 180°)", m_groupVehicleMount);
@@ -1078,11 +1071,16 @@ QWidget* MainWindow::createTab2TrainPack() {
     presetRow->addWidget(m_btnPreCenter);
     mountLayout->addLayout(presetRow);
 
-    mountLayout->addStretch();
+
     m_groupVehicleMount->setEnabled(false);
     rightMountLayout->addWidget(m_groupVehicleMount);
+    rightMountLayout->addStretch();
 
-    splitter->addWidget(rightMount);
+    auto* mountScroll = new QScrollArea(leftVehicles);
+    mountScroll->setWidgetResizable(true);
+    mountScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    mountScroll->setWidget(rightMount);
+    leftVehiclesLayout->addWidget(mountScroll, 2);
 
     // 3. Right: 3D Vehicle Preview
     QWidget* rightVpPanel = new QWidget(splitter);
@@ -1092,32 +1090,58 @@ QWidget* MainWindow::createTab2TrainPack() {
 
     QHBoxLayout* vpHeader = new QHBoxLayout();
     m_lblTab2VpTitle = new QLabel("⚡ 3D Vehicle & Roof Mount Preview", rightVpPanel);
-    m_lblTab2VpTitle->setStyleSheet("font-weight: bold; font-size: 13px; color: #00adb5;");
+    m_lblTab2VpTitle->setStyleSheet("font-weight: bold; font-size: 13px; color: #eea66b;");
     vpHeader->addWidget(m_lblTab2VpTitle);
     vpHeader->addStretch();
     rightVpLayout->addLayout(vpHeader);
 
     m_lblVehicleVpInfo = new QLabel("Model: No train pack loaded yet.", rightVpPanel);
+    m_lblVehicleVpInfo->setWordWrap(true);
     m_lblVehicleVpInfo->setStyleSheet("color: #8f96a3; font-size: 11px;");
     rightVpLayout->addWidget(m_lblVehicleVpInfo);
+    m_vehiclePreviewStack = new QStackedWidget(rightVpPanel);
+    auto* vehicleEmpty = new QWidget(m_vehiclePreviewStack);
+    vehicleEmpty->setObjectName("canvasEmpty");
+    auto* emptyLayout = new QVBoxLayout(vehicleEmpty);
+    emptyLayout->setContentsMargins(16, 16, 16, 16);
+    emptyLayout->setSpacing(14);
+    emptyLayout->addStretch();
+    emptyLayout->addWidget(new PantographEmblem(vehicleEmpty), 0, Qt::AlignHCenter);
+    m_vehicleEmptyTitle = new QLabel(vehicleEmpty);
+    m_vehicleEmptyTitle->setObjectName("emptyTitle");
+    m_vehicleEmptyTitle->setWordWrap(true);
+    m_vehicleEmptyTitle->setAlignment(Qt::AlignCenter);
+    emptyLayout->addWidget(m_vehicleEmptyTitle);
+    m_vehicleEmptyHint = new QLabel(vehicleEmpty);
+    m_vehicleEmptyHint->setObjectName("muted");
+    m_vehicleEmptyHint->setWordWrap(true);
+    m_vehicleEmptyHint->setAlignment(Qt::AlignCenter);
+    emptyLayout->addWidget(m_vehicleEmptyHint);
+    m_vehicleEmptyImport = new QPushButton(vehicleEmpty);
+    m_vehicleEmptyImport->setObjectName("actionButton");
+    connect(m_vehicleEmptyImport, &QPushButton::clicked, this, &MainWindow::onBrowsePackZip);
+    emptyLayout->addWidget(m_vehicleEmptyImport, 0, Qt::AlignHCenter);
+    emptyLayout->addStretch();
+    m_vehiclePreviewStack->addWidget(vehicleEmpty);
+    rightVpLayout->addWidget(m_vehiclePreviewStack, 1);
 
     if (m_vulkanInst && m_vulkanInst->isValid()) {
         m_vehicleViewport = new VulkanViewport();
         m_vehicleViewport->setVulkanInstance(m_vulkanInst);
         m_vehicleViewportContainer = QWidget::createWindowContainer(m_vehicleViewport, rightVpPanel);
-        m_vehicleViewportContainer->setMinimumSize(400, 300);
+        m_vehicleViewportContainer->setMinimumSize(320, 200);
         m_vehicleViewportContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         m_vehicleViewportContainer->setFocusPolicy(Qt::TabFocus);
-        rightVpLayout->addWidget(m_vehicleViewportContainer, 1);
+        m_vehiclePreviewStack->addWidget(m_vehicleViewportContainer);
 
-        QHBoxLayout* vpControls = new QHBoxLayout();
+        QGridLayout* vpControls = new QGridLayout();
         m_btnResetVehCam = new QPushButton("🎥 Front View (Reset)", rightVpPanel);
         connect(m_btnResetVehCam, &QPushButton::clicked, this, [this]() {
             if (m_vehicleViewport) {
                 m_vehicleViewport->setCameraParams(45.0f, 20.0f, 18.0f, QVector3D(0.0f, 1.8f, 0.0f));
             }
         });
-        vpControls->addWidget(m_btnResetVehCam);
+        vpControls->addWidget(m_btnResetVehCam, 0, 0);
 
         m_btnFrontVehCam = new QPushButton("🎥 Front Cab (45°)", rightVpPanel);
         connect(m_btnFrontVehCam, &QPushButton::clicked, this, [this]() {
@@ -1125,7 +1149,7 @@ QWidget* MainWindow::createTab2TrainPack() {
                 m_vehicleViewport->setCameraParams(45.0f, 20.0f, 18.0f, QVector3D(0.0f, 1.8f, 0.0f));
             }
         });
-        vpControls->addWidget(m_btnFrontVehCam);
+        vpControls->addWidget(m_btnFrontVehCam, 0, 1);
 
         m_btnRearVehCam = new QPushButton("🎥 Rear Gangway (135°)", rightVpPanel);
         connect(m_btnRearVehCam, &QPushButton::clicked, this, [this]() {
@@ -1133,26 +1157,28 @@ QWidget* MainWindow::createTab2TrainPack() {
                 m_vehicleViewport->setCameraParams(135.0f, 20.0f, 18.0f, QVector3D(0.0f, 1.8f, 0.0f));
             }
         });
-        vpControls->addWidget(m_btnRearVehCam);
+        vpControls->addWidget(m_btnRearVehCam, 0, 2);
 
         m_chkInvertVehCam = new QCheckBox("Invert Orbit Controls", rightVpPanel);
         m_chkInvertVehCam->setChecked(true);
         connect(m_chkInvertVehCam, &QCheckBox::toggled, this, [this](bool checked) {
             if (m_vehicleViewport) m_vehicleViewport->setInvertCamera(checked);
         });
-        vpControls->addWidget(m_chkInvertVehCam);
-        vpControls->addStretch();
+        vpControls->addWidget(m_chkInvertVehCam, 1, 0, 1, 3);
+
         rightVpLayout->addLayout(vpControls);
 
         m_lblTab2Help = new QLabel("💡 3D Controls: Left Drag: Orbit | Shift+Left / Middle Drag: Pan | Wheel: Zoom", rightVpPanel);
+        m_lblTab2Help->setWordWrap(true);
         m_lblTab2Help->setStyleSheet("color: #7f848e; font-size: 11px;");
         rightVpLayout->addWidget(m_lblTab2Help);
     }
 
     splitter->addWidget(rightVpPanel);
-    splitter->setStretchFactor(0, 3);
+    splitter->setChildrenCollapsible(false);
+    splitter->setStretchFactor(0, 2);
     splitter->setStretchFactor(1, 3);
-    splitter->setStretchFactor(2, 5);
+    splitter->setSizes({420, 700});
 
     tabLayout->addWidget(splitter, 1);
 
@@ -1172,7 +1198,7 @@ QWidget* MainWindow::createTab2TrainPack() {
 QWidget* MainWindow::createTab3Export() {
     QWidget* tab = new QWidget(this);
     QVBoxLayout* tabLayout = new QVBoxLayout(tab);
-    tabLayout->setContentsMargins(12, 12, 12, 12);
+    tabLayout->setContentsMargins(0, 0, 0, 0);
     tabLayout->setSpacing(12);
 
     // Group 1: Output Settings
@@ -1199,8 +1225,8 @@ QWidget* MainWindow::createTab3Export() {
 
     QHBoxLayout* previewTopRow = new QHBoxLayout();
     m_lblScriptPreviewHint = new QLabel("This script will be automatically embedded into assets/mtr/panto/ inside the train pack.", m_grpPreview);
-    previewTopRow->addWidget(m_lblScriptPreviewHint);
-    previewTopRow->addStretch();
+    m_lblScriptPreviewHint->setWordWrap(true);
+    previewTopRow->addWidget(m_lblScriptPreviewHint, 1);
     m_btnRefreshPreview = new QPushButton("🔄 Refresh Preview", m_grpPreview);
     connect(m_btnRefreshPreview, &QPushButton::clicked, this, &MainWindow::onRefreshScriptPreview);
     previewTopRow->addWidget(m_btnRefreshPreview);
@@ -1770,6 +1796,7 @@ void MainWindow::loadPackPath(const QString& path) {
         ? QString("✓ %1 içinde %2 araç tespit edildi.").arg(m_customResourcesRelPath).arg(m_vehicles.size())
         : QString("✓ %2 vehicles detected in %1.").arg(m_vehicles.size()).arg(m_customResourcesRelPath));
     m_lblPackStatus->setStyleSheet("color: #98c379; font-weight: bold;");
+    updateWorkspace();
 
     // Suggest output zip path
     QFileInfo fi(path);
@@ -2102,7 +2129,7 @@ void MainWindow::loadPantoProfileToUi(int index) {
 
     bool isTr = (m_currentLang == AppLanguage::Turkish);
     if (m_lblProfileInfo) {
-        m_lblProfileInfo->setText(QString("⚡ Script ID: %1_pantograph.js | Model: %2.obj").arg(p.randomScriptId, p.randomModelName));
+        m_lblProfileInfo->setText(QString("%1_pantograph.js\n%2.obj").arg(p.randomScriptId, p.randomModelName));
     }
 
     if (m_viewport) {
@@ -2132,7 +2159,7 @@ void MainWindow::loadPantoProfileToUi(int index) {
             if (m_lblModelInfo) {
                 m_lblModelInfo->setText(isTr ? "Henüz model yüklenmedi. (Gereken parçalar: p_base, p1, p2, p3)"
                                              : "No model loaded yet. (Required parts: p_base, p1, p2, p3)");
-                m_lblModelInfo->setStyleSheet("color: #8f96a3; font-style: italic;");
+                m_lblModelInfo->setStyleSheet("color: #8f96a3; ");
             }
             if (m_lblPivotsInfo) {
                 m_lblPivotsInfo->setText(isTr ? "Pivots: [Belirlenmedi]" : "Pivots: [Not loaded]");
@@ -2142,6 +2169,7 @@ void MainWindow::loadPantoProfileToUi(int index) {
 
     updateViewportKinematics();
     onRefreshScriptPreview();
+    updateWorkspace();
 }
 
 void MainWindow::updatePantographCombos() {
@@ -2707,6 +2735,8 @@ void MainWindow::loadVehicleModelForPreview(const VehicleMountItem& v) {
 void MainWindow::updateVehicleViewportMesh() {
     if (!m_vehicleViewport) return;
     if (m_tabs && m_tabs->currentIndex() != 1) return;
+    if (m_vehiclePreviewStack)
+        m_vehiclePreviewStack->setCurrentIndex(m_currentVehicleRow >= 0 && !m_cachedVehicleMesh.empty() ? 1 : 0);
 
     if (m_currentVehicleRow < 0 || m_currentVehicleRow >= m_vehicles.size()) {
         m_vehicleViewport->updateMeshData({});

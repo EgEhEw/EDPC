@@ -12,6 +12,7 @@
 #include <QtWidgets/qlabel.h>
 #include <QtWidgets/qgroupbox.h>
 #include <QtWidgets/qpushbutton.h>
+#include <QtWidgets/qstackedwidget.h>
 #include <QtCore/qlist.h>
 #include <QtCore/qjsonarray.h>
 #include <QtCore/qjsonobject.h>
@@ -146,6 +147,22 @@ private:
     QWidget* createTab2TrainPack();
     QWidget* createTab3Export();
     void applyDarkTheme();
+    void updateWorkspace();
+
+    QPushButton* m_navButtons[3]{};
+    QLabel* m_workspaceTitle = nullptr;
+    QLabel* m_workspaceHint = nullptr;
+    QLabel* m_stepLabel = nullptr;
+    QLabel* m_sessionStatus = nullptr;
+    QLabel* m_emptyTitle = nullptr;
+    QLabel* m_emptyHint = nullptr;
+    QPushButton* m_emptyImport = nullptr;
+    QTabWidget* m_inspectorTabs = nullptr;
+    QStackedWidget* m_previewStack = nullptr;
+    QStackedWidget* m_vehiclePreviewStack = nullptr;
+    QLabel* m_vehicleEmptyTitle = nullptr;
+    QLabel* m_vehicleEmptyHint = nullptr;
+    QPushButton* m_vehicleEmptyImport = nullptr;
 
     void loadPackPath(const QString& path);
     void updateVehicleMountUi(int row);
@@ -271,11 +288,11 @@ private:
     VulkanViewport* m_vehicleViewport;
     QWidget* m_vehicleViewportContainer;
     QLabel* m_lblVehicleVpInfo;
-    QPushButton* m_btnResetVehCam;
-    QPushButton* m_btnFrontVehCam;
-    QPushButton* m_btnRearVehCam;
-    QCheckBox* m_chkInvertVehCam;
-    QLabel* m_lblTab2Help;
+    QPushButton* m_btnResetVehCam = nullptr;
+    QPushButton* m_btnFrontVehCam = nullptr;
+    QPushButton* m_btnRearVehCam = nullptr;
+    QCheckBox* m_chkInvertVehCam = nullptr;
+    QLabel* m_lblTab2Help = nullptr;
     QPushButton* m_btnNextToExport;
 
     // --- Tab 3 Widgets ---
